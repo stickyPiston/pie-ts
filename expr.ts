@@ -35,7 +35,8 @@ export abstract class Expr {
 export class The extends Expr {
   public description = "The expression";
   public constructor(public type: Expr, public value: Expr) { super(); }
-  public synth(context: Context): SynthResult {
+
+  public override synth(context: Context): SynthResult {
     const type_core  = this.type.isType(context);
     const type_value = type_core.normalise();
     const value_core = this.value.check(context, type_value);
@@ -46,7 +47,8 @@ export class The extends Expr {
 export class Var extends Expr {
   public description = "Variable";
   public constructor(public name: Symbol) { super(); }
-  public synth(context: Context): SynthResult {
+
+  public override synth(context: Context): SynthResult {
     const type = context.get(this.name);
     if (type) {
       return type;
@@ -60,14 +62,23 @@ export class Var extends Expr {
 
 export class Atom extends Expr {
   public description = "Atom type";
-  public synth(_context: Context): SynthResult { return { type: new V.U(), expr: new C.Atom() }; }
-  public isType(_context: Context): C.Core { return new C.Atom(); }
+
+  public override synth(_context: Context): SynthResult {
+    return { type: new V.U(), expr: new C.Atom() };
+  }
+
+  public override isType(_context: Context): C.Core {
+    return new C.Atom();
+  }
 }
 
 export class Tick extends Expr {
   public description = "Tick expression";
   public constructor(public name: Symbol) { super(); }
-  public synth() { return { type: new V.Atom(), expr: new C.Tick(this.name) }; }
+
+  public override synth(_context: Context): SynthResult {
+    return { type: new V.Atom(), expr: new C.Tick(this.name) };
+  }
 }
 
 // Pairs
@@ -76,12 +87,18 @@ export class Pair extends Expr {
   public description = "Pair type";
   public constructor(public left: Expr, public right: Expr) { super(); }
 
-  public isType(context: Context): C.Core {
+  public override isType(context: Context): C.Core {
     const core_A = this.left.isType(context);
     const fresh_x = fresh(context, "x");
     const new_gamma = context.set(fresh_x, core_A.normalise());
     const core_body = this.right.isType(new_gamma);
     return new C.Sigma(fresh_x, core_A, core_body);
+  }
+
+  public override synth(context: Context): SynthResult {
+    const core_A = this.left.check(context, new V.U());
+    const core_D = this.right.check(context, new V.U());
+    return { type: new V.U(), expr: new C.Sigma(fresh(context, "x"), core_A, core_D) };
   }
 }
 
@@ -89,12 +106,12 @@ export class Sigma extends Expr {
   public description = "Sigma expression";
   public constructor(public params: { name: Symbol, value: Expr }[], public base: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const core = this.isType(context);
     return { type: new V.U(), expr: core };
   }
 
-  public isType(context: Context): C.Core {
+  public override isType(context: Context): C.Core {
     const [A, ...rest] = this.params;
     const core_A = A.value.isType(context);
     const new_gamma = context.set(A.name, core_A.normalise());
@@ -113,7 +130,7 @@ export class Cons extends Expr {
   public description = "Cons expression";
   public constructor(public left: Expr, public right: Expr) { super(); }
 
-  public check(context: Context, against: V.Value): C.Core {
+  public override check(context: Context, against: V.Value): C.Core {
     if (against instanceof V.Sigma) {
       const { name, value: A, body: D } = against;
       const core_left  = this.left.check(context, A);
@@ -130,7 +147,7 @@ export class Car extends Expr {
   public description = "Car expression";
   public constructor(public pair: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const { type, expr: core } = this.pair.synth(context);
     if (type instanceof V.Sigma) {
       return { type: type.value, expr: new C.Car(core) };
@@ -144,7 +161,7 @@ export class Cdr extends Expr {
   public description = "Cdr expression";
   public constructor(public pair: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const { type, expr: core } = this.pair.synth(context);
     if (type instanceof V.Sigma) {
       return { type: type.value, expr: new C.Cdr(core) };
@@ -160,7 +177,7 @@ export class Arrow extends Expr {
   public description = "Arrow expression";
   public constructor(public args: Expr[]) { super(); }
 
-  public isType(context: Context): C.Core {
+  public override isType(context: Context): C.Core {
     const [from, to, ...rest] = this.args;
     const core_from = from.isType(context);
     const fresh_x = fresh(context, "x");
@@ -176,13 +193,33 @@ export class Arrow extends Expr {
       throw new Error("Expected at least two arguments to ->");
     }
   }
+
+  public override synth(context: Context): SynthResult {
+    const [from, to, ...rest] = this.args;
+    const core_X = from.check(context, new V.U());
+    const var_x = fresh(context, "x");
+    const new_gamma = context.set(var_x, core_X.normalise());
+    if (rest.length) {
+      const core_R = new Arrow(rest).check(new_gamma, new V.U());
+      return {
+        type: new V.U(),
+        expr: new C.Pi(var_x, core_X, core_R)
+      };
+    } else {
+      const core_R = to.check(new_gamma, new V.U());
+      return {
+        type: new V.U(),
+        expr: new C.Pi(var_x, core_X, core_R)
+      };
+    }
+  }
 }
 
 export class Pi extends Expr {
   public description = "Pi expression";
   public constructor(public params: { name: Symbol, value: Expr }[], public base: Expr) { super(); }
 
-  public isType(context: Context): C.Core {
+  public override isType(context: Context): C.Core {
     const [arg, ...rest] = this.params;
     const core_arg = arg.value.isType(context);
     const new_gamma = context.set(arg.name, core_arg.normalise());
@@ -195,13 +232,26 @@ export class Pi extends Expr {
       return new C.Pi(arg.name, core_arg, core_base);
     }
   }
+
+  public override synth(context: Context): SynthResult {
+    const [param, ...rest] = this.params;
+    const core_X = param.value.check(context, new V.U());
+    const new_gamma = context.set(param.name, core_X.normalise());
+    if (rest.length) {
+      const core_R = new Pi(rest, this.base).check(new_gamma, new V.U());
+      return { type: new V.U(), expr: new C.Pi(param.name, core_X, core_R) };
+    } else {
+      const core_R = this.base.check(new_gamma, new V.U());
+      return { type: new V.U(), expr: new C.Pi(param.name, core_X, core_R) };
+    }
+  }
 }
 
 export class Lambda extends Expr {
   public description = "Lambda abstraction";
   public constructor(public params: Symbol[], public body: Expr) { super(); }
 
-  public check(context: Context, against: V.Value): C.Core {
+  public override check(context: Context, against: V.Value): C.Core {
     if (against instanceof V.Pi) {
       const { value, body } = against;
       const [param, ...rest] = this.params;
@@ -224,7 +274,7 @@ export class Appl extends Expr {
   public description = "Function application";
   public constructor(public func: Expr, public args: Expr[]) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     if (this.args.length > 1) {
       const args = this.args.slice(0, this.args.length - 1);
       const appl = new Appl(this.func, args);
@@ -255,15 +305,19 @@ export class Appl extends Expr {
 export class Nat extends Expr {
   public description = "Nat type";
 
-  public isType(_context: Context): C.Core {
+  public override isType(_context: Context): C.Core {
     return new C.Nat();
+  }
+
+  public override synth(_context: Context): SynthResult {
+    return { type: new V.U(), expr: new C.Nat() };
   }
 }
 
 export class Zero extends Expr {
   public description = "Zero expression";
 
-  public synth(_context: Context): SynthResult {
+  public override synth(_context: Context): SynthResult {
     return { type: new V.Nat(), expr: new C.Zero() };
   }
 }
@@ -272,7 +326,7 @@ export class Add1 extends Expr {
   public description = "Add1 expression";
   public constructor(public num: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const core_num = this.num.check(context, new V.Nat());
     return { type: new V.Nat(), expr: new C.Add1(core_num) };
   }
@@ -282,7 +336,7 @@ export class NatLit extends Expr {
   public description = "Number literal";
   public constructor(public num: number) { super(); }
 
-  public synth(_context: Context): SynthResult {
+  public override synth(_context: Context): SynthResult {
     let core_num = new C.Zero();
     for (let n = 0; n < this.num; n++)
       core_num = new C.Add1(core_num);
@@ -294,7 +348,7 @@ export class WhichNat extends Expr {
   public description = "which-Nat expression";
   public constructor(public target: Expr, public zero: Expr, public add1: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const core_t = this.target.check(context, new V.Nat());
     const { type, expr: core_b } = this.zero.synth(context);
     const fn_type = new V.Pi(fresh(context, "x"), new V.Nat(), type);
@@ -307,7 +361,7 @@ export class IterNat extends Expr {
   public description = "iter-Nat expression";
   public constructor(public target: Expr, public zero: Expr, public add1: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const core_t = this.target.check(context, new V.Nat());
     const { type, expr: core_b } = this.zero.synth(context);
     const fn_type = new V.Pi(fresh(context, "x"), type, type);
@@ -320,7 +374,7 @@ export class RecNat extends Expr {
   public description = "rec-Nat expression";
   public constructor(public target: Expr, public zero: Expr, public add1: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const core_t = this.target.check(context, new V.Nat());
     const { type, expr: core_b } = this.zero.synth(context);
     const inner_fn = new V.Pi(fresh(context, "x"), type, type);
@@ -353,7 +407,7 @@ export class IndNat extends Expr {
   public constructor(public target: Expr, public motive: Expr,
                      public zero: Expr, public add1: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const core_t = this.target.check(context, new V.Nat());
     const motive_type = new V.Pi(fresh(context, "x"), new V.Nat(), new V.U());
     const core_m = this.motive.check(context, motive_type);
@@ -384,16 +438,21 @@ export class List extends Expr {
   public description = "List type";
   public constructor(public e: Expr) { super(); }
 
-  public isType(context: Context): C.Core {
+  public override isType(context: Context): C.Core {
     const core_e = this.e.isType(context);
     return new C.List(core_e);
+  }
+
+  public override synth(context: Context): SynthResult {
+    const core_E = this.e.check(context, new V.U());
+    return { type: new V.U(), expr: new C.List(core_E) };
   }
 }
 
 export class Nil extends Expr {
   public description = "List nil";
 
-  public check(_context: Context, against: V.Value): C.Core {
+  public override check(_context: Context, against: V.Value): C.Core {
     if (against instanceof V.List) {
       return new C.Nil();
     } else {
@@ -406,7 +465,7 @@ export class ListCons extends Expr {
   public description = "List cons expression";
   public constructor(public head: Expr, public tail: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const { type, expr: core_head } = this.head.synth(context);
     const core_tail = this.tail.check(context, new V.List(type));
     return { type: new V.List(type), expr: new C.ListCons(core_head, core_tail) };
@@ -417,7 +476,7 @@ export class RecList extends Expr {
   public description = "rec-List expression";
   public constructor(public target: Expr, public nil: Expr, public cons: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const { type: type_t, expr: core_t } = this.target.synth(context);
     if (type_t instanceof V.List) {
       const { type: type_b, expr: core_b } = this.nil.synth(context);
@@ -448,7 +507,7 @@ export class IndList extends Expr {
   public constructor(public target: Expr, public motive: Expr,
                      public nil: Expr, public cons: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const { type: type_t, expr: core_t } = this.target.synth(context);
     if (type_t instanceof V.List) {
       const motive_type = create_pi_many(
@@ -489,17 +548,23 @@ export class Vec extends Expr {
   public description = "Vec type";
   public constructor(public e: Expr, public ell: Expr) { super(); }
 
-  public isType(context: Context): C.Core {
+  public override isType(context: Context): C.Core {
     const core_e = this.e.isType(context);
     const core_ell = this.ell.check(context, new V.Nat());
     return new C.Vec(core_e, core_ell);
+  }
+
+  public override synth(context: Context): SynthResult {
+    const core_E = this.e.check(context, new V.U());
+    const core_ell = this.ell.check(context, new V.Nat());
+    return { type: new V.U(), expr: new C.Vec(core_E, core_ell) };
   }
 }
 
 export class VecNil extends Expr {
   public description = "vecnil expression";
 
-  public check(_context: Context, against: V.Value): C.Core {
+  public override check(_context: Context, against: V.Value): C.Core {
     if (against instanceof V.Vec) {
       return new C.VecNil();
     } else {
@@ -512,7 +577,7 @@ export class VecCons extends Expr {
   public description = "vec:: expression";
   public constructor(public head: Expr, public tail: Expr) { super(); }
 
-  public check(context: Context, against: V.Value): C.Core {
+  public override check(context: Context, against: V.Value): C.Core {
     if (against instanceof V.Vec && against.ell instanceof V.Add1) {
       const { e, ell } = against;
       const core_e = this.head.check(context, e);
@@ -528,7 +593,7 @@ export class Head extends Expr {
   public description = "head expression";
   public constructor(public vec: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const { type, expr } = this.vec.synth(context);
     if (type instanceof V.Vec && type.ell instanceof V.Add1) {
       return { type: type.e, expr: new C.Head(expr) };
@@ -542,7 +607,7 @@ export class Tail extends Expr {
   public description = "tail expression";
   public constructor(public vec: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const { type, expr } = this.vec.synth(context);
     if (type instanceof V.Vec && type.ell instanceof V.Add1) {
       return { type: new V.Vec(type.e, type.ell.n), expr: new C.Tail(expr) };
@@ -557,7 +622,7 @@ export class IndVec extends Expr {
   public constructor(public ell: Expr, public target: Expr, public motive: Expr,
                      public nil: Expr, public cons: Expr) { super(); }
 
-  public synth(context: Context): SynthResult {
+  public override synth(context: Context): SynthResult {
     const core_ell = this.ell.check(context, new V.Nat());
     const value_ell = core_ell.normalise();
     const { type: type_t, expr: core_t } = this.target.synth(context);
@@ -572,6 +637,31 @@ export class IndVec extends Expr {
       const core_m = this.motive.check(context, motive_type);
 
       const base_type = apply_core_many(core_m, new C.Zero(), new C.VecNil());
+      const core_b = this.nil.check(context, base_type);
+
+      const var_e = fresh(context, "e"), var_es = fresh(context, "es");
+      const step_type = create_pi_many(
+        context,
+        { name: var_k, value: new V.Nat() },
+        [
+          { name: var_e, value: type_t.e.read_back() },
+          { name: var_es, value: new C.Vec(type_t.e.read_back(), new C.Var(var_k)) },
+          {
+            name: fresh(context, "almost"),
+            value: new C.Appl(new C.Appl(core_m, new C.Var(var_k)), new C.Var(var_es))
+          }
+        ],
+        new C.Appl(
+          new C.Appl(core_m, new C.Add1(new C.Var(var_k))),
+          new C.VecCons(new C.Var(var_e), new C.Var(var_es))
+        )
+      );
+      const core_s = this.cons.check(context, step_type);
+
+      return {
+        type: apply_core_many(core_m, core_ell, core_t),
+        expr: new C.IndVec(core_ell, core_t, core_m, core_b, core_s)
+      };
     } else {
       throw new Error(`Expected t in (ind-Vec ell t m b s) to be (Vec E ${value_ell}), got ${type_t}`);
     }
@@ -581,116 +671,295 @@ export class IndVec extends Expr {
 // Equalities
 
 export class Equal extends Expr {
-  public constructor(public type: Expr, public left: Expr, public right: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "= type";
+  public constructor(public type: Expr, public left: Expr, public right: Expr) { super(); }
+
+  public override isType(context: Context): C.Core {
+    const core_X = this.type.isType(context);
+    const value_X = core_X.normalise();
+    const core_from = this.left.check(context, value_X);
+    const core_to = this.right.check(context, value_X);
+
+    return new C.Equal(value_X, core_from, core_to);
+  }
+
+  public override synth(context: Context): SynthResult {
+    const core_X = this.type.check(context, new V.U());
+    const value_X = core_X.normalise();
+    const core_from = this.left.check(context, value_X);
+    const core_to = this.right.check(context, value_X);
+    return { type: new V.U(), expr: new C.Equal(value_X, core_from, core_to); };
+  }
 }
 
 export class Same extends Expr {
-  public constructor(public thing: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "same expression";
+  public constructor(public thing: Expr) { super(); }
+
+  public override check(context: Context, against: V.Value): C.Core {
+    if (against instanceof V.Equal) {
+      const core_mid = this.thing.check(context, against.X);
+      const value_mid = core_mid.normalise();
+      against.from.same_value(against.X, value_mid);
+      against.to.same_value(against.X, value_mid);
+
+      return new C.Same(core_mid);
+    } else {
+      throw new Error(`Expected (same mid) to be of type (= from to), got ${against.description}`);
+    }
+  }
 }
 
 export class Symm extends Expr {
-  public constructor(public equal: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "symm expression";
+  public constructor(public equal: Expr) { super(); }
+
+  public override synth(context: Context): SynthResult {
+    const core_t = this.equal.synth(context);
+    if (core_t.type instanceof V.Equal) {
+      const { X, from, to } = core_t.type;
+      return {
+        type: new V.Equal(X, to, from),
+        expr: new C.Symm(core_t.expr)
+      };
+    } else {
+      throw new Error(`Expected t in (symm t) to be of type (= from to), got ${core_t.type.description}`);
+    }
+  }
 }
 
 export class Cong extends Expr {
-  public constructor(public target: Expr, public func: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "cong expression";
+  public constructor(public target: Expr, public func: Expr) { super(); }
+
+  public override synth(context: Context): SynthResult {
+    const { type: type_t, expr: core_t } = this.target.synth(context);
+    if (type_t instanceof V.Equal) {
+      const { type: type_f, expr: core_f } = this.func.synth(context);
+      if (type_f instanceof V.Pi) {
+        type_t.same_type(type_f.value);
+        const value_f = core_f.normalise();
+        return {
+          type: new V.Equal(type_f.body, V.apply_many(value_f, type_t.from), V.apply_many(value_f, type_t.to)),
+          expr: new C.Cong(type_t.X, core_t, core_f)
+        };
+      } else {
+        throw new Error(`Expected f in (cong t f) to be of type (Pi ((x X)) Y), got ${type_f.description}`);
+      }
+    } else {
+      throw new Error(`Expected t in (cong t f) to be of type (= from to), got ${type_t.description}`);
+    }
+  }
 }
 
 export class Replace extends Expr {
-  public constructor(public target: Expr, public motive: Expr, public base: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "replace expression";
+  public constructor(public target: Expr, public motive: Expr, public base: Expr) { super(); }
+  
+  public override synth(context: Context): SynthResult {
+    const { type, expr: core_t } = this.target.synth(context);
+    if (type instanceof V.Equal) {
+      const motive_type = new V.Pi(fresh(context, "x"), type.X, new V.U());
+      const core_m = this.motive.check(context, motive_type);
+      const value_m = core_m.normalise();
+      const core_b = this.base.check(context, V.apply_many(value_m, type.from));
+      return {
+        type: V.apply_many(value_m, type.to),
+        expr: new C.Replace(core_t, core_m, core_b)
+      };
+    } else {
+      throw new Error(`Expected t in (replace t m b) to be of type (= from to), got ${type.description}`);
+    }
+  }
 }
 
 export class Trans extends Expr {
-  public constructor(public left: Expr, public right: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "trans expression";
+  public constructor(public left: Expr, public right: Expr) { super(); }
+
+  public override synth(context: Context): SynthResult {
+    const { type: type_left, expr: core_left } = this.left.synth(context);
+    if (type_left instanceof V.Equal) {
+      const { type: type_right, expr: core_right } = this.right.synth(context);
+      if (type_right instanceof V.Equal) {
+        type_left.X.same_type(type_right.X);
+        type_left.to.same_value(type_left.X, type_right.from);
+        return {
+          type: new V.Equal(type_left.X, type_left.from, type_right.to),
+          expr: new C.Trans(core_left, core_right)
+        };
+      } else {
+        throw new Error(`Expected rt in (trans lt rt) to be of type (= from to), got ${type_right.description}`);
+      }
+    } else {
+      throw new Error(`Expected lt in (trans lt rt) to be of type (= from to), got ${type_left.description}`);
+    }
+  }
 }
 
 export class IndEqual extends Expr {
-  public constructor(public target: Expr, public motive: Expr, public base: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "ind-= expression";
+  public constructor(public target: Expr, public motive: Expr, public base: Expr) { super(); }
+
+  public override synth(context: Context): SynthResult {
+    const { type, expr: core_t } = this.target.synth(context);
+    if (type instanceof V.Equal) {
+      const var_x = fresh(context, "x");
+      const motive_type = create_pi_many(
+        context,
+        { name: var_x, value: type.X },
+        [{
+          name: fresh(context, "t"),
+          value: new C.Equal(type.X, type.from.read_back(), new C.Var(var_x))
+        }],
+        new C.U()
+      );
+      const core_m = this.motive.check(context, motive_type);
+
+      const value_m = core_m.normalise();
+      const core_b = this.base.check(
+        context,
+        V.apply_many(value_m, type.from, new V.Same(type.from))
+      );
+
+      return {
+        type: V.apply_many(value_m, type.to, core_t.normalise()),
+        expr: new C.IndEqual(core_t, core_m, core_b)
+      };
+    } else {
+      throw new Error(`Expected t in (ind-= t m b) to be of type (= from to), got ${type.description}`);
+    }
+  }
 }
 
 // Eithers
 
 export class Either extends Expr {
-  public constructor(public left: Expr, public right: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "Either type";
+  public constructor(public left: Expr, public right: Expr) { super(); }
+
+  public override isType(context: Context): C.Core {
+    const core_lt = this.left.isType(context);
+    const core_rt = this.right.isType(context);
+    return new C.Either(core_lt, core_rt);
+  }
+
+  public override synth(context: Context): SynthResult {
+    const core_lt = this.left.check(context, new V.U());
+    const core_rt = this.right.check(context, new V.U());
+    return { type: new V.U(), expr: new C.Either(core_lt, core_rt) };
+  }
 }
 
 export class Left extends Expr {
-  public constructor(public value: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "left expression";
+  public constructor(public value: Expr) { super(); }
+
+  public override check(context: Context, against: V.Value): C.Core {
+    if (against instanceof V.Either) {
+      const core_lt = this.value.check(context, against.left);
+      return new C.Left(core_lt);
+    } else {
+      throw new Error(`Expected lt in (left lt) to be of type P, got ${against.description}`);
+    }
+  }
 }
 
 export class Right extends Expr {
-  public constructor(public value: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "right expression";
+  public constructor(public value: Expr) { super(); }
+
+  public override check(context: Context, against: V.Value) {
+    if (against instanceof V.Either) {
+      const core_lt = this.value.check(context, against.right);
+      return new C.Right(core_lt);
+    } else {
+      throw new Error(`Expected rt in (right rt) to be of type R, got ${against.description}`);
+    }
+  }
 }
 
 export class IndEither extends Expr {
+  public description = "ind-Either expression";
   public constructor(public target: Expr, public motive: Expr,
-                     public left: Expr, public right: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+                     public left: Expr, public right: Expr) { super(); }
+
+  public override synth(context: Context): SynthResult {
+    const { type, expr: core_t } = this.target.synth(context);
+    if (type instanceof V.Either) {
+      const var_x = fresh(context, "x");
+      const core_m = this.motive.check(context, new V.Pi(
+        var_x, type, new V.U()
+      ));
+
+      const core_l = this.left.check(context, new V.Pi(
+        var_x, type.left, apply_core_many(core_m, new C.Left(new C.Var(var_x)))
+      ));
+
+      const core_r = this.right.check(context, new V.Pi(
+        var_x, type.right, apply_core_many(core_m, new C.Right(new C.Var(var_x)))
+      ));
+
+      return {
+        type: apply_core_many(core_m, core_t),
+        expr: new C.IndEither(core_t, core_m, core_l, core_r)
+      };
+    } else {
+      throw new Error(`Expected t in (ind-Either t m l r) to be of type (Either P R), got ${type.description}`);
+    }
+  }
 }
 
 // Trivial
 
 export class Trivial extends Expr {
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "Trivial type";
+
+  public override isType(_context: Context): C.Core {
+    return new C.Trivial();
+  }
+
+  public override synth(_context: Context): SynthResult {
+    return { type: new V.U(), expr: new C.Trivial() };
+  }
 }
 
 export class Sole extends Expr {
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "sole expression";
+
+  public override synth(_context: Context): SynthResult {
+    return { type: new V.Trivial(), expr: new C.Sole() };
+  }
 }
 
 // Absurd
 
 export class Absurd extends Expr {
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "Absurd type";
+
+  public override isType(_context: Context): C.Core {
+    return new C.Absurd();
+  }
+
+  public override synth(_context: Context): SynthResult {
+    return { type: new V.U(), expr: new C.Absurd() };
+  }
 }
 
 export class IndAbsurd extends Expr {
-  public constructor(public target: Expr, public motive: Expr) { }
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "ind-Absurd expression";
+  public constructor(public target: Expr, public motive: Expr) { super(); }
+
+  public override synth(context: Context): SynthResult {
+    const core_t = this.target.check(context, new V.Absurd()); const core_m = this.motive.isType(context);
+    return { type: core_m.normalise(), expr: new C.IndAbsurd(core_t, core_m) };
+  }
 }
 
 export class U extends Expr {
-  public synth() { }
-  public isType() { }
-  public check(against: V.Value) { }
+  public description = "U type";
+
+  public override isType(_context: Context): C.Core {
+    return new C.U();
+  }
 }

@@ -152,3 +152,83 @@ export class Tail implements Core {
 export class U implements Core {
   public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); }
 }
+
+export class IndVec implements Core {
+  public constructor(public ell: Core, public target: Core, public motive: Core,
+                     public base: Core, public step: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Equal implements Core {
+  public constructor(public X: V.Value, public from: Core, public to: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Same implements Core {
+  public constructor(public mid: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Symm implements Core {
+  public constructor(public t: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Cong implements Core {
+  public constructor(public X: V.Value, public target: Core, public func: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Replace implements Core {
+  public constructor(public target: Core, public motive: Core, public base: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Trans implements Core {
+  public constructor(public left: Core, public right: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class IndEqual implements Core {
+  public constructor(public target: Core, public motive: Core, public base: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Either implements Core {
+  public constructor(public left: Core, public right: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Left implements Core {
+  public constructor(public value: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Right implements Core {
+  public constructor(public value: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class IndEither implements Core {
+  public constructor(public target: Core, public motive: Core,
+                     public left: Core, public right: Core) { }
+
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.U(); } // TODO
+}
+
+export class Trivial implements Core {
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.Trivial() }
+}
+
+export class Sole implements Core {
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.Sole() }
+}
+
+export class Absurd implements Core {
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.Absurd() }
+}
+
+export class IndAbsurd implements Core {
+  public constructor(public target: Core, public motive: Core) { }
+  public normalise(_gamma: Context<V.Value>): V.Value { return new V.Absurd() } // TODO
+}
