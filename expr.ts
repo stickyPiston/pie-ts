@@ -6,7 +6,7 @@ type Symbol = string;
 type SynthResult = { type: V.Value, expr: C.Core };
 type Context = I.Map<Symbol, SynthResult>;
 
-function fresh(context: Context, name: Symbol, attempt: number | undefined = undefined): Symbol {
+function fresh<T>(context: I.Map<Symbol, T>, name: Symbol, attempt: number | undefined = undefined): Symbol {
   if (context.has(name)) {
     return fresh(context, name, attempt ? attempt + 1 : 2);
   } else {
