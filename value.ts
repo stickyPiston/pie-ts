@@ -192,13 +192,28 @@ export class Sole extends Value {
 }
 
 export class Cons extends Value {
+    public description = "cons expression";
+    public constructor(public fst: Value, public snd: Value) { super(); }
+    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
+        if (type instanceof Sigma) {
+            const core_fst = this.fst.read_back(context, bound, type.value);
+            const snd_type = type.body.instantiate(type.name, this.snd);
+            const core_snd = this.snd.read_back(context, bound, snd_type);
+            return new C.Cons(core_fst, core_snd);
+        } else {
+            return super.read_back(context, bound, type);
+        }
+    }
+}
+
+export class ListCons extends Value {
     public description = ":: expression";
     public constructor(public head: Value, public tail: Value) { super(); }
     public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
         if (type instanceof List) {
             const core_head = this.head.read_back(context, bound, type.e);
             const core_tail = this.tail.read_back(context, bound, type);
-            return new C.Cons(core_head, core_tail);
+            return new C.ListCons(core_head, core_tail);
         } else {
             return super.read_back(context, bound, type);
         }
@@ -302,6 +317,18 @@ export class Right extends Value {
         if (type instanceof Either) {
             const core_value = this.value.read_back(context, bound, type.right);
             return new C.Right(core_value);
+        } else {
+            return super.read_back(context, bound, type);
+        }
+    }
+}
+
+export class Tick extends Value {
+    public description = "tick expression";
+    public constructor(public name: Symbol) { super(); }
+    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
+        if (type instanceof Atom) {
+            return new C.Tick(this.name);
         } else {
             return super.read_back(context, bound, type);
         }
