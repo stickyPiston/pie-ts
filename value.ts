@@ -3,7 +3,7 @@ import * as N from "./neutral.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 
 type Symbol = string;
-type Bound = I.List<Symbol>;
+export type Bound = I.List<Symbol>;
 export type Rho = I.Map<Symbol, Value>;
 
 export class Closure<T> {
@@ -13,7 +13,7 @@ export class Closure<T> {
     }
 }
 
-function fresh(names: Bound, x: Symbol): Symbol {
+export function fresh(names: Bound, x: Symbol): Symbol {
     let name = x;
     while (names.contains(name))
         name += "_";
