@@ -177,7 +177,7 @@ export class IterNat extends Core {
       return this.do(gamma, eval_target, this.base_expr.eval(gamma), this.add1.eval(gamma));
   }
 
-  public do(gamma: V.Rho, n: V.Zero | V.Add1 | V.Neutral, base: V.Value, step: V.Value): V.Value {
+  private do(gamma: V.Rho, n: V.Zero | V.Add1 | V.Neutral, base: V.Value, step: V.Value): V.Value {
       if (n instanceof V.Neutral) {
           const ty_name = V.fresh(to_bound(gamma), "ty");
           const pi_type = new Pi("x", new Var(ty_name), new Var(ty_name));
@@ -204,7 +204,7 @@ export class RecNat extends Core {
       return this.do(gamma, eval_target, this.base.eval(gamma), this.add1.eval(gamma));
   }
 
-  public do(gamma: V.Rho, n: V.Add1 | V.Zero | V.Neutral, base: V.Value, step: V.Value): V.Value {
+  private do(gamma: V.Rho, n: V.Add1 | V.Zero | V.Neutral, base: V.Value, step: V.Value): V.Value {
       if (n instanceof V.Neutral) {
           const ty_name = V.fresh(to_bound(gamma), "ty");
           const pi_type = new Pi("n", new Nat(),
@@ -232,7 +232,7 @@ export class IndNat extends Core {
                      this.base_expr.eval(gamma), this.add1.eval(gamma));
   }
 
-  public do(gamma: V.Rho, n: V.Add1 | V.Zero | V.Neutral, motive: V.Value,
+  private do(gamma: V.Rho, n: V.Add1 | V.Zero | V.Neutral, motive: V.Value,
             base: V.Value, step: V.Value): V.Value {
       if (n instanceof V.Neutral) {
           const n_name = V.fresh(to_bound(gamma), "n");
@@ -290,7 +290,7 @@ export class RecList extends Core {
       return this.do(gamma, eval_target, eval_base, eval_step);
   }
 
-  public do(gamma: V.Rho, target: V.ListCons | V.Nil | V.Neutral,
+  private do(gamma: V.Rho, target: V.ListCons | V.Nil | V.Neutral,
             base: V.Value, step: V.Value): V.Value {
       if (target instanceof V.Neutral) {
           const list_type = target.type as V.List;
@@ -328,7 +328,7 @@ export class IndList extends Core {
       return this.do(gamma, eval_target, eval_motive, eval_base, eval_step);
   }
 
-  public do(gamma: V.Rho, target: V.ListCons | V.Nil | V.Neutral,
+  private do(gamma: V.Rho, target: V.ListCons | V.Nil | V.Neutral,
             motive: V.Value, base: V.Value, step: V.Value): V.Value {
       if (target instanceof V.Neutral) {
           const list_type = target.type as V.List;
@@ -410,12 +410,53 @@ export class IndVec extends Core {
       return this.do(gamma, eval_ell, eval_target, eval_motive, eval_base, eval_step);
   }
 
-  public do(gamma: V.Rho, ell: V.Add1 | V.Zero | V.Neutral,
+  private mot_type(E: V.Value): V.Value {
+    return new Pi("k", new Nat(),
+        new Pi("es", new Vec(new Var("E"), new Var("k")), new U()))
+        .eval(I.Map({ E }));
+  }
+
+  private step_type(E: V.Value, motive: V.Value): V.Value {
+    return new Pi("k", new Nat(),
+        new Pi("e", new Var("E"),
+            new Pi("es", new Vec(new Var("E"), new Var("k")),
+                new Pi("so-far",
+                    new Appl(new Appl(new Var("motive"), new Var("k")), new Var("es")),
+                    new Appl(
+                        new Add1(new Appl(new Var("motive"), new Var("k"))),
+                        new VecCons(new Var("e"), new Var("es")))))))
+        .eval(I.Map({ E, motive }));
+  }
+
+  private do(gamma: V.Rho, ell: V.Add1 | V.Zero | V.Neutral,
                    target: V.VecCons | V.VecNil | V.Neutral, motive: V.Value,
                    base: V.Value, step: V.Value): V.Value {
+    if (ell instanceof V.Neutral && target instanceof V.Neutral) {
+        const E = (target.type as V.Vec).e;
+        const mot_type = this.mot_type(E);
+        const step_type = this.step_type(E, motive);
+        return new V.Neutral(
+            V.apply_many(motive, ell, target),
+            new N.IndVecEllVec(
+                ell.neutral, target.neutral,
+                new N.Normal(motive, mot_type),
+                new N.Normal(base, V.apply_many(motive, new V.Zero(), new V.VecNil())),
+                new N.Normal(step, step_type)));
+    } else if (target instanceof V.Neutral) {
+        const E = (target.type as V.Vec).e;
+        const mot_type = this.mot_type(E);
+        const step_type = this.step_type(E, motive);
+        return new V.Neutral(
+            V.apply_many(motive, ell, target),
+            new N.IndVecVec(
+                new N.Normal(ell, new V.Nat()),
+                target.neutral,
+                new N.Normal(motive, mot_type),
+                new N.Normal(base, V.apply_many(motive, new V.Zero(), new V.VecNil())),
+                new N.Normal(step, step_type)));
     // Technically the target check is not necessary, but typescript requires
     // it to allow accessing members of target
-    if (ell instanceof V.Add1 && target instanceof V.VecCons) {
+    } else if (ell instanceof V.Add1 && target instanceof V.VecCons) {
         return V.apply_many(step, ell, target.head, target.tail,
                             this.do(gamma, ell.n, target.tail, motive, base, step));
     } else {
@@ -450,37 +491,114 @@ export class Same extends Core {
 export class Symm extends Core {
   public constructor(public t: Core) { super(); }
   public override eval(gamma: V.Rho): V.Value {
-      return this.t.eval(gamma);
+      const eval_t = this.t.eval(gamma);
+      if (eval_t instanceof V.Neutral) {
+          return new V.Neutral(
+            eval_t.type,
+            new N.Symm(eval_t.neutral));
+      } else {
+          return eval_t;
+      }
   }
 }
 
 export class Cong extends Core {
-  public constructor(public X: V.Value, public target: Core, public func: Core) { super(); }
+  public constructor(public Y: V.Value, public target: Core, public func: Core) { super(); }
   public override eval(gamma: V.Rho): V.Value {
-      const eval_target = this.target.eval(gamma) as V.Same;
+      const eval_target = this.target.eval(gamma);
       const eval_func = this.func.eval(gamma);
-      return new V.Same(V.apply_many(eval_func, eval_target));
+      if (eval_target instanceof V.Neutral) {
+          const type = eval_target.type as V.Equal;
+          const func_type = new Pi("x", new Var("X"), new Var("Y"))
+            .eval(I.Map({ X: type.X, Y: this.Y }));
+          return new V.Neutral(
+              eval_target.type,
+              new N.Cong(
+                  eval_target.neutral,
+                  new N.Normal(eval_func, func_type)));
+      } else {
+          return new V.Same(V.apply_many(eval_func, eval_target));
+      }
   }
 }
 
 export class Replace extends Core {
   public constructor(public target: Core, public motive: Core, public base: Core) { super(); }
   public override eval(gamma: V.Rho): V.Value {
-      return this.base.eval(gamma);
+      const eval_target = this.target.eval(gamma);
+      const eval_base = this.base.eval(gamma);
+      if (eval_target instanceof V.Neutral) {
+          const eval_motive = this.motive.eval(gamma);
+          const ty = eval_target.type as V.Equal;
+          return new V.Neutral(
+              V.apply_many(eval_motive, ty.to),
+              new N.Replace(
+                  eval_target.neutral,
+                  new N.Normal(eval_motive, new V.Pi("x", ty.X,
+                      new V.Closure(I.Map() as V.Rho, new U()))),
+                  new N.Normal(eval_base, V.apply_many(eval_motive, ty.from))
+              )
+          )
+      } else {
+          return eval_base;
+      }
   }
 }
 
 export class Trans extends Core {
   public constructor(public left: Core, public right: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
-      return this.left.eval(gamma);
+      const eval_left = this.left.eval(gamma);
+      const eval_right = this.right.eval(gamma);
+      if (eval_left instanceof V.Neutral && eval_right instanceof V.Neutral) {
+          const tyl = eval_left.type as V.Equal;
+          const tyr = eval_right.type as V.Equal;
+          return new V.Neutral(
+              new V.Equal(tyl.X, tyl.from, tyr.to),
+              new N.TransLeftRight(eval_left.neutral, eval_right.neutral));
+      } else if (eval_left instanceof V.Neutral) {
+          const ty = eval_left.type as V.Equal;
+          return new V.Neutral(
+              new V.Equal(ty.X, ty.from, eval_right),
+              new N.TransLeft(
+                  eval_left.neutral,
+                  new N.Normal(eval_right, new V.Equal(ty.X, eval_right, eval_right))));
+      } else if (eval_right instanceof V.Neutral) {
+          const ty = eval_right.type as V.Equal;
+          return new V.Neutral(
+              new V.Equal(ty.X, eval_left, ty.to),
+              new N.TransRight(
+                  new N.Normal(eval_left, new V.Equal(ty.X, eval_left, eval_left)),
+                  eval_right.neutral));
+      } else {
+          return eval_left;
+      }
   }
 }
 
 export class IndEqual extends Core {
   public constructor(public target: Core, public motive: Core, public base: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
-      return this.base.eval(gamma);
+      const eval_target = this.target.eval(gamma);
+      const eval_base = this.base.eval(gamma);
+      if (eval_target instanceof V.Neutral) {
+          const ty = eval_target.type as V.Equal;
+          const eval_motive = this.motive.eval(gamma);
+          const motive_ty = new Pi("x", new Var("A"),
+              new Pi("_", new Equal(ty.X, new Var("from"), new Var("x")), new U()))
+              .eval(I.Map({ A: ty.X, from: ty.from }));
+          return new V.Neutral(
+            V.apply_many(eval_motive, ty.to, eval_target),
+            new N.IndEqual(
+                eval_target.neutral,
+                new N.Normal(eval_motive, motive_ty),
+                new N.Normal(eval_base,
+                    V.apply_many(eval_motive, ty.from, new V.Same(ty.from)))));
+      } else {
+          return eval_base;
+      }
   }
 }
 
@@ -510,9 +628,27 @@ export class Right extends Core {
 export class IndEither extends Core {
   public constructor(public target: Core, public motive: Core,
                      public left: Core, public right: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       const eval_target = this.target.eval(gamma);
-      if (eval_target instanceof V.Left) {
+      if (eval_target instanceof V.Neutral) {
+          const ty = eval_target.type as V.Either;
+          const eval_motive = this.motive.eval(gamma);
+          const eval_left = this.left.eval(gamma);
+          const eval_right = this.right.eval(gamma);
+          return new V.Neutral(
+              V.apply_many(eval_motive, eval_target),
+              new N.IndEither(
+                  eval_target.neutral,
+                  new N.Normal(eval_motive,
+                      new V.Pi("x", ty, new V.Closure(I.Map({}) as V.Rho, new U()))),
+                  new N.Normal(eval_left, new V.Pi("l", ty.left, new V.Closure(
+                      I.Map({ mot: eval_motive }) as V.Rho,
+                      new Appl(new Var("mot"), new Left(new Var("l")))))),
+                  new N.Normal(eval_right, new V.Pi("r", ty.right, new V.Closure(
+                      I.Map({ mot: eval_motive }) as V.Rho,
+                      new Appl(new Var("mot"), new Right(new Var("r"))))))));
+      } else if (eval_target instanceof V.Left) {
           return V.apply_many(this.left.eval(gamma), eval_target);
       } else {
           return V.apply_many(this.right.eval(gamma), eval_target);
@@ -540,7 +676,14 @@ export class Absurd extends Core {
 
 export class IndAbsurd extends Core {
   public constructor(public target: Core, public motive: Core) { super(); }
-  public override eval(_gamma: V.Rho): V.Value {
-      return new V.Absurd()
-  } // TODO
+
+  public override eval(gamma: V.Rho): V.Value {
+      const eval_motive = this.motive.eval(gamma);
+      const eval_target = this.target.eval(gamma) as V.Neutral;
+      return new V.Neutral(
+          eval_motive,
+          new N.IndAbsurd(
+              eval_target.neutral,
+              new N.Normal(eval_motive, new V.U())));
+  }
 }

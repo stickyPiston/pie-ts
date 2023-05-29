@@ -158,12 +158,24 @@ export class TransRight extends Neutral {
     }
 }
 
+export class TransLeftRight extends Neutral {
+    public constructor(public left: Neutral, public right: Neutral) { super(); }
+
+    public override read_back(context: V.Rho): C.Core {
+        const core_left  = this.left.read_back(context),
+              core_right = this.right.read_back(context);
+        return new C.Trans(core_left, core_right);
+    }
+}
+
 export class Cong extends Neutral {
     public constructor(public target: Neutral, public func: Normal) { super(); }
     public override read_back(context: V.Rho): C.Core {
+        const type = this.func.type as V.Pi;
+        const b = type.body.body.eval(type.body.context);
         const core_target = this.target.read_back(context),
               core_func   = this.func.read_back(context);
-        return new C.Cong(null, core_target, core_func);
+        return new C.Cong(b, core_target, core_func);
     }
 } 
 
