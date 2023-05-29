@@ -3,23 +3,36 @@ import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as N from "./neutral.ts";
 
 type Symbol = string;
-type Renaming = I.Map<Symbol, Symbol>;
+type Renaming = I.Map<Symbol, number>;
+type Renamings = { left: Renaming, right: Renaming, next: number };
 
 export abstract class Core {
   public eval(_gamma: V.Rho): V.Value {
       throw new Error(`Cannot evaluate ${this}`);
   }
 
-  public abstract alpha_equiv(other: Core, context?: { left: Renaming, right: Renaming }): void;
+  public abstract alpha_equiv(other: Core, context: Renamings): void;
 }
 
 export class Var extends Core {
     public constructor(public name: Symbol) { super(); }
+
     public override eval(gamma: V.Rho): V.Value {
         if (gamma.has(this.name)) {
             return gamma.get(this.name) as V.Value;
         } else {
             throw new Error(`Could not find variable ${this.name}`);
+        }
+    }
+
+    public override alpha_equiv(other: Core, context: Renamings): void {
+        if (other instanceof Var) {
+            const left = context.left.get(this.name);
+            const right = context.right.get(other.name);
+            if (left !== right)
+                throw new Error(`Not α-equiv: ${this.name} and ${other.name}`);
+        } else {
+            throw new Error("Not structurally equiv Var");
         }
     }
 }
@@ -28,39 +41,84 @@ export class Nat extends Core {
     public override eval(_gamma: V.Rho): V.Value {
         return new V.Nat();
     }
+
+    public override alpha_equiv(other: Core, _context: Renamings): void {
+        if (!(other instanceof Nat))
+            throw new Error("Not structurally equiv Nat");
+    }
 }
 
 export class Atom extends Core {
     public override eval(_gamma: V.Rho): V.Value {
         return new V.Atom();
     }
+
+    public override alpha_equiv(other: Core, _context: Renamings): void {
+        if (!(other instanceof Atom))
+            throw new Error("Not structurally equiv Atom");
+    }
 }
 
 export class Tick extends Core {
   public constructor(public name: Symbol) { super(); }
+
   public override eval(_gamma: V.Rho): V.Value {
       return new V.Tick(this.name);
   }
+
+    public override alpha_equiv(other: Core, _context: Renamings): void {
+        if (other instanceof Tick) {
+            if (this.name !== other.name)
+                throw new Error(`Not α-equiv ${this.name} and ${other.name}`);
+        } else {
+            throw new Error("Not structurally equiv Tick");
+        }
+    }
+}
+
+function add_renaming(x: Symbol, y: Symbol, r: Renamings): Renamings {
+    return { left: r.left.set(x, r.next), right: r.right.set(y, r.next), r: r.next + 1 };
 }
 
 export class Sigma extends Core {
   public constructor(public name: Symbol, public value: Core, public body: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       const eval_value = this.value.eval(gamma);
       const clos_body = new V.Closure(gamma, this.body);
       return new V.Sigma(this.name, eval_value, clos_body);
   }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof Sigma) {
+          this.value.alpha_equiv(other.value, context);
+          this.body.alpha_equiv(other.body, add_renaming(this.name, other.name, context));
+      } else {
+        throw new Error("Not structurally equiv Sigma");
+      }
+  }
 }
 
 export class Cons extends Core {
   public constructor(public left: Core, public right: Core) { super(); }
+
   public override eval(context: V.Rho): V.Value {
       return new V.Cons(this.left.eval(context), this.right.eval(context));
+  }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof Cons) {
+          this.left.alpha_equiv(other.left, context);
+          this.right.alpha_equiv(other.right, context);
+      } else {
+          throw new Error("Not structurally equiv Cons");
+      }
   }
 }
 
 export class Car extends Core {
   public constructor(public pair: Core) { super(); }
+
     public override eval(gamma: V.Rho): V.Value {
         return Car.do(this.pair.eval(gamma) as V.Cons | V.Neutral);
     }
@@ -74,10 +132,19 @@ export class Car extends Core {
           return pair.fst;
       }
   }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof Car) {
+          this.pair.alpha_equiv(other.pair, context);
+      } else {
+          throw new Error("Not structurally equiv Car");
+      }
+  }
 }
 
 export class Cdr extends Core {
   public constructor(public pair: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       const eval_pair = this.pair.eval(gamma) as V.Cons | V.Neutral;
       if (eval_pair instanceof V.Neutral) {
@@ -89,26 +156,54 @@ export class Cdr extends Core {
           return eval_pair.snd;
       }
   }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof Cdr) {
+          this.pair.alpha_equiv(other.pair, context);
+      } else {
+          throw new Error("Not structurally equiv Car");
+      }
+  }
 }
 
 export class Pi extends Core {
   public constructor(public name: Symbol, public value: Core, public body: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       const clos_body = new V.Closure(gamma, this.body);
       return new V.Pi(this.name, this.value.eval(gamma), clos_body);
+  }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof Pi) {
+          this.value.alpha_equiv(other.value, context);
+          this.body.alpha_equiv(other.body, add_renaming(this.name, other.name, context));
+      } else {
+        throw new Error("Not structurally equiv Pi");
+      }
   }
 }
 
 export class Lambda extends Core {
   public constructor(public name: Symbol, public body: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       const clos_body = new V.Closure(gamma, this.body);
       return new V.Lambda(this.name, clos_body);
+  }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof Lambda) {
+          this.body.alpha_equiv(other.body, add_renaming(this.name, other.name, context));
+      } else {
+        throw new Error("Not structurally equiv Lambda");
+      }
   }
 }
 
 export class Appl extends Core {
   public constructor(public func: Core, public arg: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       return Appl.do(
           this.func.eval(gamma) as V.Lambda | V.Neutral,
@@ -125,19 +220,42 @@ export class Appl extends Core {
             new N.Appl(func.neutral, new N.Normal(arg, pi.value)));
       }
   }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof Appl) {
+          this.func.alpha_equiv(other.func, context);
+          this.arg.alpha_equiv(other.arg, context);
+      } else {
+        throw new Error("Not structurally equiv Appl");
+      }
+  }
 }
 
 export class Zero extends Core {
   public override eval(_gamma: V.Rho): V.Value {
       return new V.Zero();
   }
+
+  public override alpha_equiv(other: Core, _context: Renamings): void {
+      if (!(other instanceof Zero))
+          throw new Error("Not structurally equiv Zero");
+  }
 }
 
 export class Add1 extends Core {
   public constructor(public num: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       const eval_n = this.num.eval(gamma);
       return new V.Add1(eval_n);
+  }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof Add1) {
+          this.num.alpha_equiv(other.num, context);
+      } else {
+          throw new Error("Not structurally equiv Add1");
+      }
   }
 }
 
@@ -148,6 +266,7 @@ function to_bound(gamma: V.Rho): V.Bound {
 export class WhichNat extends Core {
   public constructor(public target: Core, public base_type: V.Value,
                      public base_expr: Core, public add1: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       const target = this.target.eval(gamma);
       const base = this.base_expr.eval(gamma);
@@ -165,6 +284,16 @@ export class WhichNat extends Core {
           return base;
       } else {
           return step;
+      }
+  }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof WhichNat) {
+          this.target.alpha_equiv(other.target, context);
+          this.base_expr.alpha_equiv(other.base_expr, context);
+          this.add1.alpha_equiv(other.add1, context);
+      } else {
+           throw new Error("Not structurally equiv WhichNat");
       }
   }
 }
@@ -194,11 +323,22 @@ export class IterNat extends Core {
           return V.apply_many(step, this.do(gamma, n.n, base, step)); 
       }
   }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof IterNat) {
+          this.target.alpha_equiv(other.target, context);
+          this.base_expr.alpha_equiv(other.base_expr, context);
+          this.add1.alpha_equiv(other.add1, context);
+      } else {
+          throw new Error("Not structurally equiv IterNat")
+      }
+  }
 }
 
 export class RecNat extends Core {
   public constructor(public target: Core, public base_type: V.Value,
                      public base: Core, public add1: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       const eval_target = this.target.eval(gamma);
       return this.do(gamma, eval_target, this.base.eval(gamma), this.add1.eval(gamma));
@@ -222,11 +362,22 @@ export class RecNat extends Core {
           return V.apply_many(step, n.n, this.do(gamma, n.n, base, step));
       }
   }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof RecNat) {
+          this.target.alpha_equiv(other.target, context);
+          this.base.alpha_equiv(other.base, context);
+          this.add1.alpha_equiv(other.add1, context);
+      } else {
+          throw new Error("Not structurally equiv RecNat")
+      }
+  }
 }
 
 export class IndNat extends Core {
   public constructor(public target: Core, public motive: Core,
                      public base_expr: Core, public add1: Core) { super(); }
+
   public override eval(gamma: V.Rho): V.Value {
       return this.do(gamma, this.target.eval(gamma), this.motive.eval(gamma),
                      this.base_expr.eval(gamma), this.add1.eval(gamma));
@@ -253,6 +404,17 @@ export class IndNat extends Core {
           return base;
       } else {
           return V.apply_many(step, n.n, this.do(gamma, n.n, motive, base, step));
+      }
+  }
+
+  public override alpha_equiv(other: Core, context: Renamings): void {
+      if (other instanceof IndNat) {
+          this.target.alpha_equiv(other.target, context);
+          this.motive.alpha_equiv(other.motive, context);
+          this.base_expr.alpha_equiv(other.base_expr, context);
+          this.add1.alpha_equiv(other.add1, context);
+      } else {
+          throw new Error("Not structurally equiv IndNat")
       }
   }
 }
