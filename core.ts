@@ -259,7 +259,7 @@ export class Add1 extends Core {
   }
 }
 
-function to_bound(gamma: V.Rho): V.Bound {
+export function to_bound(gamma: V.Rho): V.Bound {
     return gamma.keySeq().toList();
 }
 
