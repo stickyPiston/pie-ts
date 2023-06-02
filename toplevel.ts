@@ -29,7 +29,7 @@ export class Define implements TopLevel {
   public constructor(public name: Symbol, public value: E.Expr) { }
 
   public eval(gamma: Context): Context {
-    const claim = gamma.find(e => e.type === "Claim");
+    const claim = gamma.find(e => e.name === this.name && e.type === "Claim");
     const expr_env = to_expr_env(gamma);
       const core = this.value.check(expr_env, claim!.value);
       const value = core.eval(E.to_rho(expr_env));

@@ -4,7 +4,7 @@ import * as V from "./value.ts";
 export class Normal {
     public constructor(public value: V.Value, public type: V.Value) { }
     public read_back(context: V.Rho): C.Core {
-        return this.value.read_back(context, this.type);
+        return this.value.read_back(context, C.to_bound(context), this.type);
     }
 }
 
@@ -172,10 +172,9 @@ export class Cong extends Neutral {
     public constructor(public target: Neutral, public func: Normal) { super(); }
     public override read_back(context: V.Rho): C.Core {
         const type = this.func.type as V.Pi;
-        const b = type.body.body.eval(type.body.context);
         const core_target = this.target.read_back(context),
               core_func   = this.func.read_back(context);
-        return new C.Cong(b, core_target, core_func);
+        return new C.Cong(type.body.body, core_target, core_func);
     }
 } 
 
@@ -210,7 +209,7 @@ export class Tail extends Neutral {
     }
 }
 
-interface HasReadBack { read_back(context: V.Rho): C.Core; };
+interface HasReadBack { read_back(context: V.Rho): C.Core; }
 function read_back_indVec(this: { ell: HasReadBack, target: HasReadBack,
                                   motive: HasReadBack, base: HasReadBack,
                                   step: HasReadBack },

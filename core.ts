@@ -3,7 +3,7 @@ import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as N from "./neutral.ts";
 
 type Symbol = string;
-type Renaming = I.Map<Symbol, number>;
+export type Renaming = I.Map<Symbol, number>;
 type Renamings = { left: Renaming, right: Renaming, next: number };
 
 export abstract class Core {
@@ -212,7 +212,7 @@ export class Appl extends Core {
 
   public static do(func: V.Lambda | V.Neutral, arg: V.Value): V.Value {
       if (func instanceof V.Lambda) {
-          return V.apply_many(func, arg);
+          return func.body.instantiate(func.name, arg);
       } else {
           const pi = func.type as V.Pi;
           return new V.Neutral(
@@ -670,7 +670,7 @@ export class IndVec extends Core {
                 new Pi("so-far",
                     new Appl(new Appl(new Var("motive"), new Var("k")), new Var("es")),
                     new Appl(
-                        new Add1(new Appl(new Var("motive"), new Var("k"))),
+                        new Appl(new Var("motive"), new Add1(new Var("k"))),
                         new VecCons(new Var("e"), new Var("es")))))))
         .eval(I.Map({ E, motive }));
   }
@@ -737,12 +737,13 @@ export class U extends Core {
 
 
 export class Equal extends Core {
-  public constructor(public X: V.Value, public from: Core, public to: Core) { super(); }
+  public constructor(public X: Core, public from: Core, public to: Core) { super(); }
 
   public override eval(gamma: V.Rho): V.Value {
+      const eval_X = this.X.eval(gamma);
       const eval_from = this.from.eval(gamma);
       const eval_to = this.to.eval(gamma);
-      return new V.Equal(this.X, eval_from, eval_to);
+      return new V.Equal(eval_X, eval_from, eval_to);
   }
 
   public override alpha_equiv(other: Core, context: Renamings): void {
@@ -795,15 +796,16 @@ export class Symm extends Core {
 }
 
 export class Cong extends Core {
-  public constructor(public Y: V.Value, public target: Core, public func: Core) { super(); }
+  public constructor(public Y: Core, public target: Core, public func: Core) { super(); }
 
   public override eval(gamma: V.Rho): V.Value {
       const eval_target = this.target.eval(gamma);
       const eval_func = this.func.eval(gamma);
+      const eval_Y = this.Y.eval(gamma);
       if (eval_target instanceof V.Neutral) {
           const type = eval_target.type as V.Equal;
           const func_type = new Pi("x", new Var("X"), new Var("Y"))
-            .eval(I.Map({ X: type.X, Y: this.Y }));
+            .eval(I.Map({ X: type.X, Y: eval_Y }));
           return new V.Neutral(
               eval_target.type,
               new N.Cong(
@@ -909,7 +911,7 @@ export class IndEqual extends Core {
           const ty = eval_target.type as V.Equal;
           const eval_motive = this.motive.eval(gamma);
           const motive_ty = new Pi("x", new Var("A"),
-              new Pi("_", new Equal(ty.X, new Var("from"), new Var("x")), new U()))
+              new Pi("_", new Equal(new Var("A"), new Var("from"), new Var("x")), new U()))
               .eval(I.Map({ A: ty.X, from: ty.from }));
           return new V.Neutral(
             V.apply_many(eval_motive, ty.to, eval_target),

@@ -6,9 +6,9 @@ type Symbol = string;
 export type Bound = I.List<Symbol>;
 export type Rho = I.Map<Symbol, Value>;
 
-export class Closure<T> {
-    public constructor(public context: I.Map<Symbol, T>, public body: C.Core) { }
-    public instantiate(name: Symbol, value: T): Value {
+export class Closure {
+    public constructor(public context: Rho, public body: C.Core) { }
+    public instantiate(name: Symbol, value: Value): Value {
         return this.body.eval(this.context.set(name, value));
     }
 }
@@ -34,13 +34,15 @@ export abstract class Value {
     public same_type(context: Rho, bound: Bound, other: Value): void {
         const core_self = this.read_back_type(context, bound);
         const core_other = other.read_back_type(context, bound);
-        core_self.alpha_equiv(core_other);
+        const empty = { left: I.Map() as C.Renaming, right: I.Map() as C.Renaming, next: 0 };
+        core_self.alpha_equiv(core_other, empty);
     }
 
     public same_value(context: Rho, bound: Bound, type: Value, other: Value): void {
         const core_self = this.read_back(context, bound, type);
         const core_other = other.read_back(context, bound, type);
-        core_self.alpha_equiv(core_other);
+        const empty = { left: I.Map() as C.Renaming, right: I.Map() as C.Renaming, next: 0 };
+        core_self.alpha_equiv(core_other, empty);
     }
 }
 
@@ -89,7 +91,7 @@ export class Absurd extends Type {
 
 export class Sigma extends Type {
     public description = "Sigma type";
-    public constructor(public name: Symbol, public value: Value, public body: Closure<Value>) { super(); }
+    public constructor(public name: Symbol, public value: Value, public body: Closure) { super(); }
 
     public override read_back_type(context: Rho, bound: Bound): C.Core {
         const y = fresh(bound, this.name);
@@ -102,7 +104,7 @@ export class Sigma extends Type {
 
 export class Pi extends Type {
     public description = "Pi type";
-    public constructor(public name: Symbol, public value: Value, public body: Closure<Value>) { super(); }
+    public constructor(public name: Symbol, public value: Value, public body: Closure) { super(); }
 
     public override read_back_type(context: Rho, bound: Bound): C.Core {
         const y = fresh(bound, this.name);
@@ -148,9 +150,10 @@ export class Equal extends Type {
     public description = "= type";
     public constructor(public X: Value, public from: Value, public to: Value) { super(); }
     public override read_back_type(context: Rho, bound: Bound): C.Core {
-        const core_from = this.from.read_back_type(context, bound);
-        const core_to = this.to.read_back_type(context, bound);
-        return new C.Equal(this.X, core_from, core_to);
+        const core_X = this.X.read_back_type(context, bound);
+        const core_from = this.from.read_back(context, bound, this.X);
+        const core_to = this.to.read_back(context, bound, this.X);
+        return new C.Equal(core_X, core_from, core_to);
     }
 }
 
@@ -259,12 +262,12 @@ export class VecNil extends Value {
 
 export class Lambda extends Value {
     public description = "lambda expression";
-    public constructor(public name: Symbol, public body: Closure<Value>) { super(); }
+    public constructor(public name: Symbol, public body: Closure) { super(); }
     public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
         if (type instanceof Pi) {
             const y = fresh(bound, this.name);
             const value = new Neutral(type.value, new N.Var(y));
-            const value_body = type.body.instantiate(this.name, value);
+            const value_body = type.body.instantiate(type.name, value);
             const core_body = apply_many(this, value)
                 .read_back(context, bound.push(y), value_body);
             return new C.Lambda(y, core_body);
@@ -345,5 +348,9 @@ export class Neutral extends Value {
         } else {
             return super.read_back_type(context, bound);
         }
+    }
+
+    public read_back(context: Rho, _bound: Bound): C.Core {
+        return this.neutral.read_back(context);
     }
 }

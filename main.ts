@@ -3,7 +3,18 @@ import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as P from "./parse.ts";
 
 P.to_ast(`
-(claim length (-> (List Nat) Nat))
-(define length (lambda (l) (rec-List l 0 (lambda (e es n) (add1 n)))))
-(check-same Nat (length (:: 1 (:: 2 nil))) 2)
+(claim map (Π [(A U) (B U) (ℓ Nat)] (→ [→ A B] [Vec A ℓ] [Vec B ℓ])))
+(define map (λ (_ B ℓ f vec) (ind-Vec ℓ vec (λ (k _) (Vec B k)) (the (Vec B zero) vecnil) (λ (_ el _ ac) (vec:: (f el) ac)))))
+
+(claim ∘ (Π [(A U) (B U) (C U)] [→ (→ A B) (→ B C) (→ A C)]))
+(define ∘ (λ (_ _ _ f g x) (g (f x))))
+
+(claim map-f∘g=map-f∘map-g (Π [(A U) (B U) (C U) (f (→ A B)) (g (→ B C)) (ℓ Nat) (vec (Vec A ℓ))]
+    (= (Vec C ℓ) (map A C ℓ (∘ A B C f g) vec)
+        (∘ (Vec A ℓ) (Vec B ℓ) (Vec C ℓ) (map A B ℓ f) (map B C ℓ g) vec))))
+(define map-f∘g=map-f∘map-g (λ (A B C f g ℓ vec) (ind-Vec ℓ vec
+    (λ (ℓ₂ vec) (= (Vec C ℓ₂) (map A C ℓ₂ (∘ A B C f g) vec)
+        (∘ (Vec A ℓ₂) (Vec B ℓ₂) (Vec C ℓ₂) (map A B ℓ₂ f) (map B C ℓ₂ g) vec)))
+    (same vecnil)
+    (λ (ℓ₂ e l p) (cong p (the (→ (Vec C ℓ₂) (Vec C (add1 ℓ₂))) (λ (l) (vec:: (g (f e)) l))))))))
 `).reduce((gamma, x) => x.eval(gamma), I.List() as T.Context);

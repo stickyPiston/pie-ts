@@ -12,10 +12,11 @@ export type ContextEntry = { name: Symbol } & (Define | Claim | HasType);
 export type Context = I.List<ContextEntry>;
 
 function fresh(context: Context, name: Symbol, attempt: number | undefined = undefined): Symbol {
-  if (context.find(x => x.name === name)) {
+const altered = attempt ? name + attempt : name;
+  if (context.find(x => x.name === altered)) {
     return fresh(context, name, (attempt ?? 0) + 1);
   } else {
-    return attempt ? name + attempt : name;
+    return altered;
   }
 }
 
@@ -282,11 +283,12 @@ export class Lambda extends Expr {
   public constructor(public params: Symbol[], public body: Expr) { super(); }
 
   public override check(context: Context, against: V.Value): C.Core {
+      // console.log(this, against, against.body?.context.toJS());
     if (against instanceof V.Pi) {
       const { value, body } = against;
       const [param, ...rest] = this.params;
       const new_gamma = push_local(param, value, context);
-      const new_against = body.instantiate(param, new V.Neutral(value, new N.Var(param)))
+      const new_against = body.instantiate(against.name, new V.Neutral(value, new N.Var(param)))
       if (rest.length) {
         const smaller = new Lambda(rest, this.body);
         const core_smaller = smaller.check(new_gamma, new_against);
@@ -296,6 +298,7 @@ export class Lambda extends Expr {
         return new C.Lambda(param, core_R);
       }
     } else {
+        // console.log(this, context.toJS());
       throw new Error(`Expected Pi type for lambda expression, got ${against.description}`);
     }
   }
@@ -580,6 +583,7 @@ export class VecCons extends Expr {
 
   public override check(context: Context, against: V.Value): C.Core {
     if (against instanceof V.Vec && against.ell instanceof V.Add1) {
+        // console.log(context.toJS());
       const { e, ell } = against;
       const core_e = this.head.check(context, e);
       const core_es = this.tail.check(context, new V.Vec(e, ell.n));
@@ -637,7 +641,10 @@ export class IndVec extends Expr {
         .eval(I.Map({ E: type_t.e }));
       const core_m = this.motive.check(context, motive_type);
 
-      const base_type = run_eval(new C.Appl(new C.Appl(core_m, new C.Zero()), new C.VecNil()), context);
+      const eval_m = run_eval(core_m, context);
+      const base_type = V.apply_many(eval_m, new V.Zero(), new V.VecNil());
+      // const base_type = run_eval(core_base_type, push_local("mot", eval_m, context));
+      
       const core_b = this.nil.check(context, base_type);
 
       // const var_e = fresh(context, "e"), var_es = fresh(context, "es");
@@ -647,7 +654,8 @@ export class IndVec extends Expr {
                 new C.Pi("so-far", new C.Appl(new C.Appl(new C.Var("mot"), new C.Var("k")), new C.Var("es")),
                     new C.Appl(new C.Appl(new C.Var("mot"), new C.Add1(new C.Var("k"))),
                         new C.VecCons(new C.Var("E"), new C.Var("es")))))))
-        .eval(I.Map({ E: type_t, mot: run_eval(core_m, context) }));
+        .eval(I.Map({ E: type_t.e, mot: run_eval(core_m, context) }));
+      // console.log(this.cons, step_type);
       const core_s = this.cons.check(context, step_type);
 
       return {
@@ -672,16 +680,15 @@ export class Equal extends Expr {
     const core_from = this.left.check(context, value_X);
     const core_to = this.right.check(context, value_X);
 
-    return new C.Equal(value_X, core_from, core_to);
+    return new C.Equal(core_X, core_from, core_to);
   }
 
   public override synth(context: Context): SynthResult {
     const core_X = this.type.check(context, new V.U());
-    // TODO: Revert X in Equal to Core
     const value_X = run_eval(core_X, context);
     const core_from = this.left.check(context, value_X);
     const core_to = this.right.check(context, value_X);
-    return { type: new V.U(), expr: new C.Equal(value_X, core_from, core_to) };
+    return { type: new V.U(), expr: new C.Equal(core_X, core_from, core_to) };
   }
 }
 
@@ -695,7 +702,7 @@ export class Same extends Expr {
       const value_mid = run_eval(core_mid, context);
       const rho = to_rho(context), bound = C.to_bound(rho);
       against.from.same_value(rho, bound, against.X, value_mid);
-      against.to.same_value(rho, bound, against.X, value_mid);
+      value_mid.same_value(rho, bound, against.X, against.to);
 
       return new C.Same(core_mid);
     } else {
@@ -732,14 +739,14 @@ export class Cong extends Expr {
       const { type: type_f, expr: core_f } = this.func.synth(context);
       if (type_f instanceof V.Pi) {
         const rho = to_rho(context), bound = C.to_bound(rho);
-        type_t.same_type(rho, bound, type_f.value);
+        type_t.X.same_type(rho, bound, type_f.value);
         const value_f = run_eval(core_f, context);
         return {
           type: new V.Equal(
             type_f.body.instantiate(type_f.name, type_t.from),
             V.apply_many(value_f, type_t.from),
             V.apply_many(value_f, type_t.to)),
-          expr: new C.Cong(type_t.X, core_t, core_f)
+          expr: new C.Cong(type_t.X.read_back_type(rho, bound), core_t, core_f)
         };
       } else {
         throw new Error(`Expected f in (cong t f) to be of type (Pi ((x X)) Y), got ${type_f.description}`);
@@ -806,7 +813,7 @@ export class IndEqual extends Expr {
     if (type instanceof V.Equal) {
       // const var_x = fresh(context, "x");
       const motive_type = new C.Pi("x", new C.Var("X"),
-        new C.Pi("eq", new C.Equal(type.X, new C.Var("from"), new C.Var("x")), new C.U()))
+        new C.Pi("eq", new C.Equal(new C.Var("X"), new C.Var("from"), new C.Var("x")), new C.U()))
         .eval(I.Map({ X: type.X, from: type.from }));
       const core_m = this.motive.check(context, motive_type);
 

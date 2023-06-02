@@ -7,8 +7,8 @@ export function to_ast(source: string): T.TopLevel[] {
 
 function lex(source: string): string[] {
     return source
-        .replace(/\(/g, " ( ")
-        .replace(/\)/g, " ) ")
+        .replace(/[\(\[]/g, " ( ")
+        .replace(/[\)\]]/g, " ) ")
         .trim()
         .split(/\s+/);
 }
@@ -93,9 +93,9 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
             // once inductive data types are implemented, therefore a low-effort
             // solution for now
             return new constructors[name](...args.map(astify_expr));
-        } else if (name === "->") {
+        } else if (name === "->" || name === "→") {
             return new E.Arrow(args.map(astify_expr));
-        } else if (name === "lambda") {
+        } else if (name === "lambda" || name === "λ") {
             const [params, body] = expect_arity(2, args);
             if (params instanceof SimpleTree) {
                 const names = [...params].map(name => {
@@ -106,7 +106,7 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
             } else {
                 throw new Error("Expected parameter list");
             }
-        } else if (name === "Pi" || name === "Sigma") {
+        } else if (name === "Pi" || name === "Π" || name === "Sigma" || name === "Σ") {
             const [params, body] = expect_arity(2, args);
             if (params instanceof SimpleTree) {
                 const bindings = [...params].map(binding => {
@@ -121,7 +121,7 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
                     }
                 });
 
-                if (name === "Pi")
+                if (name === "Pi" || name === "Π")
                     return new E.Pi(bindings, astify_expr(body));
                 else
                     return new E.Sigma(bindings, astify_expr(body));
@@ -134,6 +134,7 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
     } else {
         switch (expr) {
             case "nil": return new E.Nil();
+            case "vecnil": return new E.VecNil();
             case "Atom": return new E.Atom();
             case "U": return new E.U();
             case "Nat": return new E.Nat();
