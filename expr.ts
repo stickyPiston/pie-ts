@@ -76,9 +76,12 @@ export class Var extends Expr {
   public constructor(public name: Symbol) { super(); }
 
   public override synth(context: Context): SynthResult {
-    const type = context.find(({ name, type }) => name === this.name && type === "Define") as { name: Symbol } & Define;
+    const type = context.find(({ name, type }) =>
+        name === this.name && (type === "Define" || type === "HasType")) as
+            { name: Symbol } & (HasType | Define);
     if (type) {
-      return { type: type.value.type, expr: new C.Var(this.name) };
+      const type_value = type.type === "Define" ? type.value.type : type.value;
+      return { type: type_value, expr: new C.Var(this.name) };
     } else {
       throw new Error(`Cannot find undeclared symbol ${this.name}`);
     }
