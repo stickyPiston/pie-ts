@@ -14,22 +14,24 @@ function lex(source: string): string[] {
 }
 
 function parse(tokens: string[]): SimpleTree<string>[] {
-    const start = new SimpleTree<string>;
-    start.add_child(new SimpleTree);
+    const start = new SimpleTree<string>();
+    start.add_child(new SimpleTree());
     return tokens.reduce((ast: SimpleTree<string>, token: string) => {
         if (token === "(") {
-            ast.add_child(new SimpleTree);
+            ast.add_child(new SimpleTree());
         } else if (token === ")") {
             const last_expr = ast.pop();
-            if (ast.last instanceof SimpleTree && last_expr !== undefined)
+            if (ast.last instanceof SimpleTree && last_expr !== undefined) {
                 ast.last.add_child(last_expr);
-            else
+            } else {
                 throw new Error("Parsing error");
+            }
         } else {
-            if (ast.last instanceof SimpleTree)
+            if (ast.last instanceof SimpleTree) {
                 ast.last.add_child(token);
-            else
+            } else {
                 throw new Error("Parsing error");
+            }
         }
         return ast;
     }, start).children[0] as unknown as SimpleTree<string>[];
@@ -42,19 +44,25 @@ class SimpleTree<T> {
         this.children.push(child);
     }
 
-    public pop() { return this.children.pop(); }
+    public pop() {
+        return this.children.pop();
+    }
 
     public get last() {
-        return this.children[this.children.length - 1]; 
+        return this.children[this.children.length - 1];
     }
 
     public *[Symbol.iterator]() {
-        for (const child of this.children)
+        for (const child of this.children) {
             yield child;
+        }
     }
 }
 
-function expect_arity<T>(n: number, args: (SimpleTree<T> | T)[]): (SimpleTree<T> | T)[] {
+function expect_arity<T>(
+    n: number,
+    args: (SimpleTree<T> | T)[],
+): (SimpleTree<T> | T)[] {
     if (args.length === n) return args;
     else throw new Error(`Expected ${n} argument, but got ${args.length}`);
 }
@@ -64,23 +72,28 @@ function astify_toplevels(trees: SimpleTree<string>[]): T.TopLevel[] {
         switch (name) {
             case "define": {
                 const [name, body] = expect_arity(2, args);
-                if (typeof name === "string")
+                if (typeof name === "string") {
                     return new T.Define(name, astify_expr(body));
-                else
+                } else {
                     throw new Error("");
+                }
             }
             case "claim": {
                 const [name, body] = expect_arity(2, args);
-                if (typeof name === "string")
+                if (typeof name === "string") {
                     return new T.Claim(name, astify_expr(body));
-                else
+                } else {
                     throw new Error("");
+                }
             }
             case "check-same": {
-                const [type, left, right] = expect_arity(3, args).map(astify_expr);
+                const [type, left, right] = expect_arity(3, args).map(
+                    astify_expr,
+                );
                 return new T.CheckSame(type, left, right);
             }
-            default: throw new Error(`Invalid toplevel statement ${name}`);
+            default:
+                throw new Error(`Invalid toplevel statement ${name}`);
         }
     });
 }
@@ -98,7 +111,7 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
         } else if (name === "lambda" || name === "λ") {
             const [params, body] = expect_arity(2, args);
             if (params instanceof SimpleTree) {
-                const names = [...params].map(name => {
+                const names = [...params].map((name) => {
                     if (typeof name === "string") return name;
                     else throw new Error("Expected name");
                 });
@@ -106,25 +119,29 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
             } else {
                 throw new Error("Expected parameter list");
             }
-        } else if (name === "Pi" || name === "Π" || name === "Sigma" || name === "Σ") {
+        } else if (
+            name === "Pi" || name === "Π" || name === "Sigma" || name === "Σ"
+        ) {
             const [params, body] = expect_arity(2, args);
             if (params instanceof SimpleTree) {
-                const bindings = [...params].map(binding => {
+                const bindings = [...params].map((binding) => {
                     if (binding instanceof SimpleTree) {
                         const [name, value] = expect_arity(2, binding.children);
-                        if (typeof name === "string")
+                        if (typeof name === "string") {
                             return { name, value: astify_expr(value) };
-                        else
+                        } else {
                             throw new Error("Expected a name");
+                        }
                     } else {
                         throw new Error("Expected a binding");
                     }
                 });
 
-                if (name === "Pi" || name === "Π")
+                if (name === "Pi" || name === "Π") {
                     return new E.Pi(bindings, astify_expr(body));
-                else
+                } else {
                     return new E.Sigma(bindings, astify_expr(body));
+                }
             } else {
                 throw new Error("Expected list of bindings");
             }
@@ -133,15 +150,24 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
         }
     } else {
         switch (expr) {
-            case "nil": return new E.Nil();
-            case "vecnil": return new E.VecNil();
-            case "Atom": return new E.Atom();
-            case "U": return new E.U();
-            case "Nat": return new E.Nat();
-            case "zero": return new E.Zero();
-            case "sole": return new E.Sole();
-            case "Trivial": return new E.Trivial();
-            case "Absurd": return new E.Absurd();
+            case "nil":
+                return new E.Nil();
+            case "vecnil":
+                return new E.VecNil();
+            case "Atom":
+                return new E.Atom();
+            case "U":
+                return new E.U();
+            case "Nat":
+                return new E.Nat();
+            case "zero":
+                return new E.Zero();
+            case "sole":
+                return new E.Sole();
+            case "Trivial":
+                return new E.Trivial();
+            case "Absurd":
+                return new E.Absurd();
             default: {
                 if (/\d+/.test(expr)) {
                     return new E.NatLit(Number(expr));
@@ -184,5 +210,5 @@ const constructors = {
     "replace": E.Replace,
     "trans": E.Trans,
     "cong": E.Cong,
-    "ind-=": E.IndEqual
+    "ind-=": E.IndEqual,
 };

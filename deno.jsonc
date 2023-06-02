@@ -1,0 +1,10 @@
+{
+    "tasks": {
+        "start": "deno run app/index.ts"
+    },
+    "fmt": {
+        "indentWidth": 4,
+        "singleQuote": false,
+        "lineWidth": 100
+    }
+}

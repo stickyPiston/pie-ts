@@ -1,8 +1,3 @@
-import * as T from "./toplevel.ts";
-import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
-import * as P from "./parse.ts";
-
-P.to_ast(`
 (claim map (Π [(A U) (B U) (ℓ Nat)] (→ [→ A B] [Vec A ℓ] [Vec B ℓ])))
 (define map (λ (_ B ℓ f vec) (ind-Vec ℓ vec (λ (k _) (Vec B k)) (the (Vec B zero) vecnil) (λ (_ el _ ac) (vec:: (f el) ac)))))
 
@@ -17,4 +12,3 @@ P.to_ast(`
         (∘ (Vec A ℓ₂) (Vec B ℓ₂) (Vec C ℓ₂) (map A B ℓ₂ f) (map B C ℓ₂ g) vec)))
     (same vecnil)
     (λ (ℓ₂ e l p) (cong p (the (→ (Vec C ℓ₂) (Vec C (add1 ℓ₂))) (λ (l) (vec:: (g (f e)) l))))))))
-`).reduce((gamma, x) => x.eval(gamma), I.List() as T.Context);
