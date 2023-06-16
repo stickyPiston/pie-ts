@@ -145,35 +145,35 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
             } else {
                 throw new Error("Expected list of bindings");
             }
+        } else if (name === "match") {
+            const [target, ...arms] = args;
+            return new E.Match(astify_expr(target), arms.map(arm => {
+                if (arm instanceof SimpleTree) {
+                    const [pattern, body] = expect_arity(2, arm.children);
+                    if (pattern instanceof SimpleTree) {
+                        const [type, name] = expect_arity(2, pattern.children);
+                        return new E.Arm(new E.Pattern(astify_expr(type), name as string), astify_expr(body));
+                    } else {
+                        throw new Error("");
+                    }
+                } else {
+                    throw new Error("");
+                }
+            }));
         } else {
             return new E.Appl(astify_expr(name), args.map(astify_expr));
         }
     } else {
         switch (expr) {
-            case "nil":
-                return new E.Nil();
-            case "vecnil":
-                return new E.VecNil();
             case "Atom":
                 return new E.Atom();
             case "U":
                 return new E.U();
-            case "Nat":
-                return new E.Nat();
-            case "zero":
-                return new E.Zero();
-            case "sole":
-                return new E.Sole();
-            case "Trivial":
-                return new E.Trivial();
-            case "Absurd":
-                return new E.Absurd();
             default: {
-                if (/\d+/.test(expr)) {
-                    return new E.NatLit(Number(expr));
-                } else {
+                if (expr.startsWith("'"))
+                    return new E.Tick(expr.slice(1))
+                else
                     return new E.Var(expr);
-                }
             }
         }
     }
@@ -181,34 +181,8 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
 
 const constructors = {
     "the": E.The,
-    "ind-Absurd": E.IndAbsurd,
-    "add1": E.Add1,
-    "which-Nat": E.WhichNat,
-    "iter-Nat": E.IterNat,
-    "rec-Nat": E.RecNat,
-    "ind-Nat": E.IndNat,
     "Pair": E.Pair,
     "cons": E.Pair,
     "car": E.Car,
-    "cdr": E.Cdr,
-    "List": E.List,
-    "::": E.ListCons,
-    "rec-List": E.RecList,
-    "ind-List": E.IndList,
-    "Vec": E.Vec,
-    "vec::": E.VecCons,
-    "head": E.Head,
-    "tail": E.Tail,
-    "ind-Vec": E.IndVec,
-    "Either": E.Either,
-    "left": E.Left,
-    "right": E.Right,
-    "ind-Either": E.IndEither,
-    "=": E.Equal,
-    "same": E.Same,
-    "symm": E.Symm,
-    "replace": E.Replace,
-    "trans": E.Trans,
-    "cong": E.Cong,
-    "ind-=": E.IndEqual,
+    "cdr": E.Cdr
 };

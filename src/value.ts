@@ -64,20 +64,13 @@ export abstract class Value {
 
 // Types
 
-abstract class Type extends Value {
+export abstract class Type extends Value {
     public override read_back(
         context: Rho,
         bound: Bound,
         _type: Value,
     ): C.Core {
         return this.read_back_type(context, bound);
-    }
-}
-
-export class Nat extends Type {
-    public description = "Nat type";
-    public override read_back_type(): C.Core {
-        return new C.Nat();
     }
 }
 
@@ -92,20 +85,6 @@ export class Atom extends Type {
     public description = "Atom type";
     public override read_back_type(): C.Core {
         return new C.Atom();
-    }
-}
-
-export class Trivial extends Type {
-    public description = "Trivial type";
-    public override read_back_type(): C.Core {
-        return new C.Trivial();
-    }
-}
-
-export class Absurd extends Type {
-    public description = "Absurd type";
-    public override read_back_type(): C.Core {
-        return new C.Absurd();
     }
 }
 
@@ -153,94 +132,7 @@ export class Pi extends Type {
     }
 }
 
-export class List extends Type {
-    public description = "List type";
-    public constructor(public e: Value) {
-        super();
-    }
-
-    public override read_back_type(context: Rho, bound: Bound): C.Core {
-        const core_e = this.e.read_back_type(context, bound);
-        return new C.List(core_e);
-    }
-}
-
-export class Vec extends Type {
-    public description = "Vec type";
-    public constructor(public e: Value, public ell: Value) {
-        super();
-    }
-
-    public override read_back_type(context: Rho, bound: Bound): C.Core {
-        const core_e = this.e.read_back_type(context, bound);
-        const core_ell = this.ell.read_back(context, bound, new Nat());
-        return new C.Vec(core_e, core_ell);
-    }
-}
-
-export class Either extends Type {
-    public description = "Either type";
-    public constructor(public left: Value, public right: Value) {
-        super();
-    }
-    public override read_back_type(context: Rho, bound: Bound): C.Core {
-        const core_left = this.left.read_back_type(context, bound);
-        const core_right = this.right.read_back_type(context, bound);
-        return new C.Either(core_left, core_right);
-    }
-}
-
-export class Equal extends Type {
-    public description = "= type";
-    public constructor(public X: Value, public from: Value, public to: Value) {
-        super();
-    }
-    public override read_back_type(context: Rho, bound: Bound): C.Core {
-        const core_X = this.X.read_back_type(context, bound);
-        const core_from = this.from.read_back(context, bound, this.X);
-        const core_to = this.to.read_back(context, bound, this.X);
-        return new C.Equal(core_X, core_from, core_to);
-    }
-}
-
 // Constructors
-
-export class Add1 extends Value {
-    public description = "add1 expression";
-    public constructor(public n: Value) {
-        super();
-    }
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Nat) {
-            const core_n = this.n.read_back(context, bound, type);
-            return new C.Add1(core_n);
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
-export class Zero extends Value {
-    public description = "zero expression";
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Nat) {
-            return new C.Zero();
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
-export class Sole extends Value {
-    public description = "sole expression";
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Trivial) {
-            return new C.Sole();
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
 
 export class Cons extends Value {
     public description = "cons expression";
@@ -253,61 +145,6 @@ export class Cons extends Value {
             const snd_type = type.body.instantiate(type.name, this.snd);
             const core_snd = this.snd.read_back(context, bound, snd_type);
             return new C.Cons(core_fst, core_snd);
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
-export class ListCons extends Value {
-    public description = ":: expression";
-    public constructor(public head: Value, public tail: Value) {
-        super();
-    }
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof List) {
-            const core_head = this.head.read_back(context, bound, type.e);
-            const core_tail = this.tail.read_back(context, bound, type);
-            return new C.ListCons(core_head, core_tail);
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
-export class Nil extends Value {
-    public description = "nil expression";
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof List) {
-            return new C.Nil();
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
-export class VecCons extends Value {
-    public description = "vec:: expression";
-    public constructor(public head: Value, public tail: Value) {
-        super();
-    }
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Vec && type.ell instanceof Add1) {
-            const core_head = this.head.read_back(context, bound, type.e);
-            const tail_type = new Vec(type.e, type.ell.n);
-            const core_tail = this.tail.read_back(context, bound, tail_type);
-            return new C.VecCons(core_head, core_tail);
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
-export class VecNil extends Value {
-    public description = "vecnil expression";
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Vec && type.ell instanceof Zero) {
-            return new C.VecNil();
         } else {
             return super.read_back(context, bound, type);
         }
@@ -343,51 +180,6 @@ export function apply_many(func: Value, ...args: Value[]): Value {
     }, func);
 }
 
-export class Same extends Value {
-    public description = "same expression";
-    public constructor(public thing: Value) {
-        super();
-    }
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Equal) {
-            const core_thing = this.thing.read_back(context, bound, type.X);
-            return new C.Same(core_thing);
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
-export class Left extends Value {
-    public description = "left expression";
-    public constructor(public value: Value) {
-        super();
-    }
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Either) {
-            const core_value = this.value.read_back(context, bound, type.left);
-            return new C.Left(core_value);
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
-export class Right extends Value {
-    public description = "right expression";
-    public constructor(public value: Value) {
-        super();
-    }
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Either) {
-            const core_value = this.value.read_back(context, bound, type.right);
-            return new C.Right(core_value);
-        } else {
-            return super.read_back(context, bound, type);
-        }
-    }
-}
-
 export class Tick extends Value {
     public description = "tick expression";
     public constructor(public name: Symbol) {
@@ -418,5 +210,42 @@ export class Neutral extends Value {
 
     public read_back(context: Rho, _bound: Bound): C.Core {
         return this.neutral.read_back(context);
+    }
+}
+
+export class Coproduct extends Type {
+    public description = "Coproduct expression";
+    public constructor(public left: Value, public right: Value) { super(); }
+
+    public override read_back_type(context: Rho, bound: Bound) {
+        const core_l = this.left.read_back_type(context, bound),
+              core_r = this.right.read_back_type(context, bound);
+        return new C.Coproduct(core_l, core_r);
+    }
+}
+
+export class Inl extends Value {
+    public description = "Inl expression";
+    public constructor(public value: Value) { super(); }
+
+    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
+        if (type instanceof Coproduct) {
+            return new C.Inl(this.value.read_back(context, bound, type.left));
+        } else {
+            return super.read_back(context, bound, type);
+        }
+    }
+}
+
+export class Inr extends Value {
+    public description = "Inr expression";
+    public constructor(public value: Value) { super(); }
+
+    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
+        if (type instanceof Coproduct) {
+            return new C.Inr(this.value.read_back(context, bound, type.right));
+        } else {
+            return super.read_back(context, bound, type);
+        }
     }
 }
