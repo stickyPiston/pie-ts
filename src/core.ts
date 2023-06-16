@@ -12,6 +12,7 @@ export abstract class Core {
     }
 
     public abstract alpha_equiv(other: Core, context: Renamings): void;
+    public abstract toString(): string;
 }
 
 export class Var extends Core {
@@ -38,6 +39,10 @@ export class Var extends Core {
             throw new Error("Not structurally equiv Var");
         }
     }
+
+    public override toString(): string {
+        return this.name;
+    }
 }
 
 export class Atom extends Core {
@@ -49,6 +54,10 @@ export class Atom extends Core {
         if (!(other instanceof Atom)) {
             throw new Error("Not structurally equiv Atom");
         }
+    }
+
+    public override toString(): string {
+        return "Atom";
     }
 }
 
@@ -69,6 +78,10 @@ export class Tick extends Core {
         } else {
             throw new Error("Not structurally equiv Tick");
         }
+    }
+
+    public override toString(): string {
+        return `'${this.name}`;
     }
 }
 
@@ -106,6 +119,10 @@ export class Sigma extends Core {
             throw new Error("Not structurally equiv Sigma");
         }
     }
+
+    public override toString(): string {
+        return `(Σ ((${this.name} ${this.value.toString()})) ${this.body.toString()})`;
+    }
 }
 
 export class Cons extends Core {
@@ -124,6 +141,10 @@ export class Cons extends Core {
         } else {
             throw new Error("Not structurally equiv Cons");
         }
+    }
+
+    public override toString(): string {
+        return `(cons ${this.left.toString()} ${this.right.toString()})`;
     }
 }
 
@@ -154,6 +175,10 @@ export class Car extends Core {
             throw new Error("Not structurally equiv Car");
         }
     }
+
+    public override toString(): string {
+        return `(car ${this.pair.toString()})`;
+    }
 }
 
 export class Cdr extends Core {
@@ -180,6 +205,10 @@ export class Cdr extends Core {
         } else {
             throw new Error("Not structurally equiv Car");
         }
+    }
+
+    public override toString(): string {
+        return `(cdr ${this.pair.toString()})`;
     }
 }
 
@@ -208,6 +237,10 @@ export class Pi extends Core {
             throw new Error("Not structurally equiv Pi");
         }
     }
+
+    public override toString(): string {
+        return `(Π ((${this.name} ${this.value.toString()})) ${this.body.toString()})`;
+    }
 }
 
 export class Lambda extends Core {
@@ -229,6 +262,10 @@ export class Lambda extends Core {
         } else {
             throw new Error("Not structurally equiv Lambda");
         }
+    }
+
+    public override toString(): string {
+        return `(λ (${this.name}) ${this.body.toString()})`;
     }
 }
 
@@ -264,6 +301,10 @@ export class Appl extends Core {
             throw new Error("Not structurally equiv Appl");
         }
     }
+
+    public override toString(): string {
+        return `(${this.func.toString()} ${this.arg.toString()})`;
+    }
 }
 
 export function to_bound(gamma: V.Rho): V.Bound {
@@ -279,6 +320,10 @@ export class U extends Core {
         if (!(other instanceof U)) {
             throw new Error("Not structurally equiv U");
         }
+    }
+
+    public override toString(): string {
+        return "U";
     }
 }
 
@@ -299,6 +344,10 @@ export class Coproduct extends Core {
             throw new Error("Not structurally equiv Coproduct");
         }
     }
+
+    public override toString(): string {
+        return `(+ ${this.left.toString()} ${this.right.toString()})`;
+    }
 }
 
 export class Inl extends Core {
@@ -315,6 +364,10 @@ export class Inl extends Core {
             throw new Error("Not structurally equiv Inl");
         }
     }
+
+    public override toString(): string {
+        return `(inl ${this.value.toString()})`;
+    }
 }
 
 export class Inr extends Core {
@@ -330,6 +383,10 @@ export class Inr extends Core {
         } else {
             throw new Error("Not structurally equiv Inr");
         }
+    }
+
+    public override toString(): string {
+        return `(inr ${this.value.toString()})`;
     }
 }
 
@@ -360,5 +417,9 @@ export class IndCoproduct extends Core {
         } else {
             throw new Error("Not structurally equiv IndCoproduct");
         }
+    }
+
+    public override toString(): string {
+        return `(ind-+ ${this.target.toString()} ${this.left.toString()} ${this.right.toString()})`;
     }
 }

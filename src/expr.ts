@@ -451,59 +451,99 @@ export class Match extends Expr {
     ) { super(); }
 
     public override synth(context: Context): SynthResult {
-        const [first, ...rest] = this.arms;
         const { expr: core_a, type: type_a } = this.target.synth(context);
         if (type_a instanceof V.Coproduct) {
-            if (rest.length > 1) {
-                // Recurse, then check the first arm
-                const smaller_var = fresh(context, "x");
-                const smaller = new Match(new Var(smaller_var), rest);
-                const smaller_context = context.push({ name: smaller_var, type: "HasType", value: type_a.right });
-                const { expr: core_smaller, type: type_smaller } = smaller.synth(smaller_context);
-                
-                const pattern = first.pattern.type.check(context, new V.U());
-                const rho = to_rho(context), bound = C.to_bound(rho);
-                pattern.eval(rho).same_type(rho, bound, type_a.left);
-                const core_left = first.body.check(context, type_smaller);
-
-                return {
-                    expr: new C.IndCoproduct(
-                        core_a,
-                        type_smaller,
-                        new C.Lambda(first.pattern.name, core_left),
-                        new C.Lambda(smaller_var, core_smaller)),
-                    type: type_smaller
-                };
-            } else if (rest.length === 1) {
-                const second = rest[0];
-
-                // Check that the ""patterns"" actually destruct the coproduct well
-                const pat_left = first.pattern.type.check(context, new V.U()),
-                      pat_right = second.pattern.type.check(context, new V.U());
-                const rho = to_rho(context), bound = C.to_bound(rho);
-                pat_left.eval(rho).same_type(rho, bound, type_a.left);
-                pat_right.eval(rho).same_type(rho, bound, type_a.right);
-
-                const context_left = context.push({ name: first.pattern.name, type: "HasType", value: type_a.left });
-                const { expr: core_left, type: type_left_body } = first.body.synth(context_left);
-                const context_right = context.push({ name: second.pattern.name, type: "HasType", value: type_a.right });
-                const core_right = second.body.check(context_right, type_left_body);
-
-                return {
-                    expr: new C.IndCoproduct(
-                        core_a,
-                        type_left_body,
-                        new C.Lambda(first.pattern.name, core_left),
-                        new C.Lambda(second.pattern.name, core_right)),
-                    type: type_left_body
-                };
-            } else { // Only one arm
-                // Eventually the match expression needs to do exhaustiveness checking
-                // and it may the case that only one arms remains (example: front on Vecs)
-                throw new Error("One arm");
-            }
+            // Reorder arms, then do the type checking
+            const arms = Match.reorder_arms(context, type_a, this.arms);
+            return Match.synth_helper(context, arms, core_a, type_a);
         } else {
             throw new Error("Expected t in (match t c1 c2) to be A + B");
+        }
+    }
+
+    private static collect_variants(from: V.Value): V.Value[] {
+        if (from instanceof V.Coproduct) {
+            return [
+                ...Match.collect_variants(from.left),
+                ...Match.collect_variants(from.right)
+            ];
+        } else {
+            return [from];
+        }
+    }
+
+    private static reorder_arms(context: Context, type_a: V.Coproduct, arms: Arm[]): Arm[] {
+        const variants = Match.collect_variants(type_a);
+        const rho = to_rho(context), bound = C.to_bound(rho);
+        return variants.map(variant => {
+            const arm = arms.find(arm => {
+                const type_pat = arm.pattern.type.isType(context).eval(rho);
+                try {
+                    type_pat.same_type(rho, bound, variant);
+                    return true;
+                } catch {
+                    return false;
+                }
+            });
+            if (arm) {
+                return arm;
+            } else {
+                throw new Error(`Match not exhaustive: missing pattern for ${variant.read_back_type(rho, bound).toString()}`);
+            }
+        });
+    }
+
+    private static synth_helper(context: Context, arms: Arm[], core_a: C.Core, type_a: V.Coproduct): SynthResult {
+        const [first, ...rest] = arms;
+        if (rest.length > 1) {
+            // Recurse, then check the first arm
+            const smaller_var = fresh(context, "x");
+            const smaller = new Match(new Var(smaller_var), rest);
+            const smaller_context = context.push({ name: smaller_var, type: "HasType", value: type_a.right });
+            const { expr: core_smaller, type: type_smaller } = smaller.synth(smaller_context);
+            
+            const pattern = first.pattern.type.isType(context);
+            const rho = to_rho(context), bound = C.to_bound(rho);
+            pattern.eval(rho).same_type(rho, bound, type_a.left);
+            const context_left = context.push({ name: first.pattern.name, type: "HasType", value: type_a.left });
+            const core_left = first.body.check(context_left, type_smaller);
+
+            return {
+                expr: new C.IndCoproduct(
+                    core_a,
+                    type_smaller,
+                    new C.Lambda(first.pattern.name, core_left),
+                    new C.Lambda(smaller_var, core_smaller)),
+                type: type_smaller
+            };
+        } else if (rest.length === 1) {
+            const second = rest[0];
+
+            // Check that the ""patterns"" actually destruct the coproduct well
+            const pat_left = first.pattern.type.isType(context),
+                    pat_right = second.pattern.type.isType(context);
+            const rho = to_rho(context), bound = C.to_bound(rho);
+            pat_left.eval(rho).same_type(rho, bound, type_a.left);
+            pat_right.eval(rho).same_type(rho, bound, type_a.right);
+
+            // Synthesize the type of one of the arms' body and then check the other one against that type
+            const context_left = context.push({ name: first.pattern.name, type: "HasType", value: type_a.left });
+            const { expr: core_left, type: type_left_body } = first.body.synth(context_left);
+            const context_right = context.push({ name: second.pattern.name, type: "HasType", value: type_a.right });
+            const core_right = second.body.check(context_right, type_left_body);
+
+            return {
+                expr: new C.IndCoproduct(
+                    core_a,
+                    type_left_body,
+                    new C.Lambda(first.pattern.name, core_left),
+                    new C.Lambda(second.pattern.name, core_right)),
+                type: type_left_body
+            };
+        } else { // Only one arm
+            // Eventually the match expression needs to do exhaustiveness checking
+            // and it may the case that only one arms remains (example: front on Vecs)
+            throw new Error("One arm");
         }
     }
 }
