@@ -14,16 +14,28 @@
 //     })
 //     .parse(Deno.args);
 
-import { I, V, C, P } from "../src/index.ts";
+import { I, V, C, P, T } from "../src/index.ts";
 const ast = P.to_ast(`
-(check-same Atom
-    (match a
-        (((Pair Atom Atom) c) (car c))
-        (((-> Atom Atom) d) (d 't))
-        ((Atom b) b))
-    'hello)
+(data Person
+    (Professor (firstname Atom) (lastname Atom) (course Atom))
+    (Programmer (firstname Atom) (lastname Atom) (language Atom) (ide Atom))
+    (Student (firstname Atom) (lastname Atom) (school Atom)))
+(claim John Person)
+(define John (make-Programmer 'John 'Doe 'Pie 'VScode))
 `);
-ast[0].eval(I.List([
-    { name: "a", type: "Claim", value: new V.Coproduct(new V.Sigma("x", new V.Atom(), new V.Closure(I.Map() as V.Rho, new C.Atom())), new V.Coproduct(new V.Atom(), new V.Pi("x", new V.Atom(), new V.Closure(I.Map() as V.Rho, new C.Atom())))) },
-    { name: "a", type: "Define", value: new V.Inr(new V.Inl(new V.Tick("hello"))) }
-]));
+// `
+// (check-same Atom
+//     (match (the Person (make-Professor 'John 'Doe 'Logic))
+//         ((Professor first last course) first)
+//         ((Programmer first last lang ide) first))
+//     'John)
+// `
+console.log(ast.reduce((gamma, x) => x.eval(gamma), I.List() as T.Context));
+// ast.reduce(
+//     (gamma, x) => x.eval(gamma),
+//     I.List() as T.Context,
+// );
+// ast[0].eval(I.List([
+//     { name: "a", type: "Claim", value: new V.Coproduct(new V.Sigma("x", new V.Atom(), new V.Closure(I.Map() as V.Rho, new C.Atom())), new V.Coproduct(new V.Atom(), new V.Pi("x", new V.Atom(), new V.Closure(I.Map() as V.Rho, new C.Atom())))) },
+//     { name: "a", type: "Define", value: new V.Inr(new V.Inl(new V.Tick("hello"))) }
+// ]));

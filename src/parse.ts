@@ -1,5 +1,6 @@
 import * as T from "./toplevel.ts";
 import * as E from "./expr.ts";
+import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 
 export function to_ast(source: string): T.TopLevel[] {
     return astify_toplevels([...parse(lex(source))]);
@@ -87,10 +88,37 @@ function astify_toplevels(trees: SimpleTree<string>[]): T.TopLevel[] {
                 }
             }
             case "check-same": {
-                const [type, left, right] = expect_arity(3, args).map(
-                    astify_expr,
-                );
+                const [type, left, right] = expect_arity(3, args).map(astify_expr);
                 return new T.CheckSame(type, left, right);
+            }
+            case "data": {
+                if (args.length > 2) {
+                    const [name, ...constructors] = args;
+                    if (typeof name === "string") {
+                        const fields = constructors.map((constr, i) => {
+                            if (constr instanceof SimpleTree) {
+                                const [name, ...fields] = constr.children;
+                                if (name instanceof SimpleTree)
+                                    throw new Error("Expected a name as first argument in constructor");
+                                const params = fields.map(field => {
+                                    if (!(field instanceof SimpleTree))
+                                        throw new Error("Expected a constructor");
+                                    const [name, type] = field.children;
+                                    if (name instanceof SimpleTree)
+                                        throw new Error("Expected a name as first argument of constructor parameter");
+                                    return { name, type: astify_expr(type) };
+                                })
+                                return new T.Constructor(name, I.List(params), i);
+                            }
+                            throw new Error("Expected a constructor in data");
+                        });
+                        return new T.Data(name, I.List(fields));
+                    } else {
+                        throw new Error("Expected a name as first argument in data");
+                    }
+                } else {
+                    throw new Error("Expected at least 2 arguments to data");
+                }
             }
             default:
                 throw new Error(`Invalid toplevel statement ${name}`);
