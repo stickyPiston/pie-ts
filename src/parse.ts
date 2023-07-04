@@ -1,5 +1,6 @@
 import * as T from "./toplevel.ts";
 import * as E from "./expr.ts";
+import * as M from "./match.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 
 export function to_ast(source: string): T.TopLevel[] {
@@ -175,17 +176,26 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
             }
         } else if (name === "match") {
             const [target, ...arms] = args;
-            return new E.Match(astify_expr(target), arms.map(arm => {
-                if (arm instanceof SimpleTree) {
-                    const [pattern, body] = expect_arity(2, arm.children);
-                    if (pattern instanceof SimpleTree) {
-                        const [type, name] = expect_arity(2, pattern.children);
-                        return new E.Arm(new E.Pattern(astify_expr(type), name as string), astify_expr(body));
-                    } else {
-                        throw new Error("");
-                    }
+            return new M.Match(astify_expr(target), I.List(arms).map(arm => {
+                if (!(arm instanceof SimpleTree))
+                    throw new Error("Expected an arm in match expression");
+
+                const [pattern_ast, body] = expect_arity(2, arm.children);
+                if (!(pattern_ast instanceof SimpleTree))
+                    throw new Error("Expected a pattern as first argument in match expression arm");
+
+                if (pattern_ast.children.length === 2) {
+                    const [type, name] = pattern_ast.children;
+                    if (name instanceof SimpleTree)
+                        throw new Error("Expected a name in coproduct pattern");
+                    return new M.Arm(new M.CoproductPattern(astify_expr(type), name), astify_expr(body));
+                } else if (pattern_ast.children.length > 2) {
+                    const [type, ...params] = pattern_ast.children;
+                    if (params.some(param => param instanceof SimpleTree))
+                        throw new Error("Expected names in sigma pattern");
+                    return new M.Arm(new M.SigmaPattern(astify_expr(type), I.List(params as string[])), astify_expr(body));
                 } else {
-                    throw new Error("");
+                    throw new Error("Expected parameters in pattern");
                 }
             }));
         } else {
@@ -210,7 +220,7 @@ function astify_expr(expr: SimpleTree<string> | string): E.Expr {
 const constructors = {
     "the": E.The,
     "Pair": E.Pair,
-    "cons": E.Pair,
+    "cons": E.Cons,
     "car": E.Car,
     "cdr": E.Cdr
 };
