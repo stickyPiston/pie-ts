@@ -7,9 +7,13 @@ export type Bound = I.List<Symbol>;
 export type Rho = I.Map<Symbol, Value>;
 
 export class Closure {
-    public constructor(public context: Rho, public body: C.Core) {}
+    public constructor(public context: Rho, public body: C.Core) { }
     public instantiate(name: Symbol, value: Value): Value {
         return this.body.eval(this.context.set(name, value));
+    }
+
+    public toString(): string {
+        return this.body.toString();
     }
 }
 
@@ -60,6 +64,8 @@ export abstract class Value {
         };
         core_self.alpha_equiv(core_other, empty);
     }
+
+    abstract toString(): string;
 }
 
 // Types
@@ -79,12 +85,20 @@ export class U extends Type {
     public override read_back_type(): C.Core {
         return new C.U();
     }
+
+    public override toString(): string {
+        return "U";
+    }
 }
 
 export class Atom extends Type {
     public description = "Atom type";
     public override read_back_type(): C.Core {
         return new C.Atom();
+    }
+
+    public override toString(): string {
+        return "Atom";
     }
 }
 
@@ -108,6 +122,10 @@ export class Sigma extends Type {
             dV.read_back_type(context, bound.push(y)),
         );
     }
+
+    public override toString(): string {
+        return `(Σ (${this.name} ${this.value}) ${this.body})`;
+    }
 }
 
 export class Pi extends Type {
@@ -130,6 +148,10 @@ export class Pi extends Type {
             dV.read_back_type(context, bound.push(y)),
         );
     }
+
+    public override toString(): string {
+        return `(Π (${this.name} ${this.value}) ${this.body})`;
+    }
 }
 
 // Constructors
@@ -149,6 +171,10 @@ export class Cons extends Value {
             return super.read_back(context, bound, type);
         }
     }
+
+    public override toString(): string {
+        return `(cons ${this.fst} ${this.snd})`;
+    }
 }
 
 export class Lambda extends Value {
@@ -156,6 +182,7 @@ export class Lambda extends Value {
     public constructor(public name: Symbol, public body: Closure) {
         super();
     }
+
     public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
         if (type instanceof Pi) {
             const y = fresh(bound, this.name);
@@ -167,6 +194,10 @@ export class Lambda extends Value {
         } else {
             return super.read_back(context, bound, type);
         }
+    }
+
+    public override toString(): string {
+        return `(λ (${this.name}) ${this.body})`;
     }
 }
 
@@ -185,12 +216,17 @@ export class Tick extends Value {
     public constructor(public name: Symbol) {
         super();
     }
+
     public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
         if (type instanceof Atom) {
             return new C.Tick(this.name);
         } else {
             return super.read_back(context, bound, type);
         }
+    }
+
+    public override toString(): string {
+        return `'${this.name}`;
     }
 }
 
@@ -211,6 +247,10 @@ export class Neutral extends Value {
     public read_back(context: Rho, _bound: Bound): C.Core {
         return this.neutral.read_back(context);
     }
+
+    public override toString(): string {
+        return this.neutral.toString();
+    }
 }
 
 export class Coproduct extends Type {
@@ -221,6 +261,10 @@ export class Coproduct extends Type {
         const core_l = this.left.read_back_type(context, bound),
               core_r = this.right.read_back_type(context, bound);
         return new C.Coproduct(core_l, core_r);
+    }
+
+    public override toString(): string {
+        return `(+ ${this.left} ${this.right})`;
     }
 }
 
@@ -235,6 +279,10 @@ export class Inl extends Value {
             return super.read_back(context, bound, type);
         }
     }
+
+    public override toString(): string {
+        return `(inl ${this.value})`;
+    }
 }
 
 export class Inr extends Value {
@@ -247,5 +295,9 @@ export class Inr extends Value {
         } else {
             return super.read_back(context, bound, type);
         }
+    }
+
+    public override toString(): string {
+        return `(inr ${this.value})`;
     }
 }
