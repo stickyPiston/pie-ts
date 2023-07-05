@@ -1,6 +1,7 @@
 import * as V from "./value.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as N from "./neutral.ts";
+import { C } from "./index.ts";
 
 type Symbol = string;
 
@@ -504,13 +505,27 @@ export class IndCoproduct extends Core {
     ) { super(); }
 
     public override eval(gamma: V.Rho): V.Value {
-        const target = this.target.eval(gamma) as V.Inl | V.Inr;
-        if (target instanceof V.Inl) {
+        const target = this.target.eval(gamma) as V.Neutral | V.Inl | V.Inr;
+        if (target instanceof V.Neutral && target.type instanceof V.Coproduct) {
+            const left_type = new C.Pi("L", new C.Var("left"), new C.Var("motive"))
+                .eval(I.Map({ left: target.type.left, motive: this.motive }));
+            const right_type = new C.Pi("R", new C.Var("right"), new C.Var("motive"))
+                .eval(I.Map({ right: target.type.right, motive: this.motive }));
+            return new V.Neutral(
+                this.motive,
+                new N.IndCoproduct(
+                    target.neutral,
+                    this.motive,
+                    new N.Normal(this.left.eval(gamma), left_type),
+                    new N.Normal(this.right.eval(gamma), right_type)
+                )
+            );
+        } else if (target instanceof V.Inl) {
             const func = this.left.eval(gamma);
             return V.apply_many(func, target.value);
         } else {
             const func = this.right.eval(gamma);
-            return V.apply_many(func, target.value);
+            return V.apply_many(func, (target as V.Inr).value);
         }
     }
         

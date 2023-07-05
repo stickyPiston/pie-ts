@@ -51,8 +51,6 @@ export class Appl extends Neutral {
     }
 }
 
-// Pair eliminators
-
 export class Car extends Neutral {
     public constructor(public pair: Neutral) {
         super();
@@ -75,4 +73,19 @@ export class Cdr extends Neutral {
     }
 }
 
-// TODO: Add neutral values for ind-+
+export class IndCoproduct extends Neutral {
+    public constructor(
+        public target: Neutral,
+        public motive: V.Value,
+        public left: Normal,
+        public right: Normal
+    ) { super(); }
+
+    public override read_back(context: V.Rho): C.Core {
+        const core_target = this.target.read_back(context);
+        const core_left = this.left.read_back(context);
+        const core_right = this.right.read_back(context);
+
+        return new C.IndCoproduct(core_target, this.motive, core_left, core_right);
+    }
+}
