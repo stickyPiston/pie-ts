@@ -6,10 +6,23 @@ import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 type Symbol = string;
 type TopLevelEntry = { name: Symbol; type: "Claim" | "Define"; value: V.Value };
 export type Context = I.List<TopLevelEntry>;
+
+/**
+ * Abstract class for top-level constructs
+ */
 export interface TopLevel {
+    /**
+     * Evaluate a top-level statement given some context returning the updated context
+     * @param gamma the top-level context so far
+     */
     eval(gamma: Context): Context;
 }
 
+/**
+ * Convert a toplevel context into an expression context
+ * @param context the toplevel context
+ * @returns the expression context
+ */
 function to_expr_env(context: Context): E.Context {
     return context.map<E.ContextEntry>(({ name, type, value }) => {
         if (type === "Claim") {
@@ -29,9 +42,17 @@ function to_expr_env(context: Context): E.Context {
     });
 }
 
+/**
+ * Concrete class for (define ...) statement
+ */
 export class Define implements TopLevel {
     public constructor(public name: Symbol, public value: E.Expr) {}
 
+    /**
+     * Check whether there is claim before this define and then check the definition's
+     * body against the claimed type to obtain a core expression which can be evaluated and
+     * put into the new context
+     */
     public eval(gamma: Context): Context {
         const claim = gamma.find((e) => e.name === this.name && e.type === "Claim");
         const expr_env = to_expr_env(gamma);
@@ -41,9 +62,15 @@ export class Define implements TopLevel {
     }
 }
 
+/**
+ * Declare a variables type using (claim ...)
+ */
 export class Claim implements TopLevel {
     public constructor(public name: Symbol, public type: E.Expr) {}
 
+    /**
+     * Check whether the body is a type and then add it to the context
+     */
     public eval(gamma: Context) {
         const expr_env = to_expr_env(gamma);
         const core = this.type.isType(expr_env);
@@ -52,6 +79,10 @@ export class Claim implements TopLevel {
     }
 }
 
+/**
+ * To make the language somewhat useful there is a construct to check whether something
+ * type checks and it produces the correct value
+ */
 export class CheckSame implements TopLevel {
     public constructor(
         public type: E.Expr,
@@ -59,6 +90,9 @@ export class CheckSame implements TopLevel {
         public right: E.Expr,
     ) {}
 
+    /**
+     * Evaluate the type, check the two expressions against that type and then check the values
+     */
     public eval(gamma: Context) {
         const expr_env = to_expr_env(gamma);
         const rho = E.to_rho(expr_env);
@@ -184,6 +218,10 @@ export class Data implements TopLevel {
             .reduceRight((a, t) => new C.Coproduct(t, a));
     }
 
+    /**
+     * Datatype definitions add the datatype itself (claim and define) and
+     * each constructor's type and creation function to the context
+     */
     public eval(gamma: Context): Context {
         const expr_env = to_expr_env(gamma), rho = E.to_rho(expr_env);
         const core_record = this.to_type(gamma), record_type = core_record.eval(rho);

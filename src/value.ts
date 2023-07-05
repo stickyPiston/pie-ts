@@ -41,28 +41,13 @@ export abstract class Value {
     public same_type(context: Rho, bound: Bound, other: Value): void {
         const core_self = this.read_back_type(context, bound);
         const core_other = other.read_back_type(context, bound);
-        const empty = {
-            left: I.Map() as C.Renaming,
-            right: I.Map() as C.Renaming,
-            next: 0,
-        };
-        core_self.alpha_equiv(core_other, empty);
+        core_self.alpha_equiv(core_other, new C.Renamings);
     }
 
-    public same_value(
-        context: Rho,
-        bound: Bound,
-        type: Value,
-        other: Value,
-    ): void {
+    public same_value(context: Rho, bound: Bound, type: Value, other: Value): void {
         const core_self = this.read_back(context, bound, type);
         const core_other = other.read_back(context, bound, type);
-        const empty = {
-            left: I.Map() as C.Renaming,
-            right: I.Map() as C.Renaming,
-            next: 0,
-        };
-        core_self.alpha_equiv(core_other, empty);
+        core_self.alpha_equiv(core_other, new C.Renamings);
     }
 
     abstract toString(): string;
