@@ -1,12 +1,16 @@
 import * as C from "./core.ts";
 import * as V from "./value.ts";
+import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 
 /**
  * Normal values are values paired with their type such that
  * they can read back without missing information
  */
 export class Normal {
-    public constructor(public value: V.Value, public type: V.Value) {}
+    public constructor(
+        public value: V.Value,
+        public type: V.Value
+    ) { }
     
     /**
      * Read back a normal value to a core expression
@@ -30,9 +34,7 @@ export abstract class Neutral {
 }
 
 export class Var extends Neutral {
-    public constructor(public name: string) {
-        super();
-    }
+    public constructor(public name: string) { super(); }
 
     public override read_back(_context: V.Rho): C.Core {
         return new C.Var(this.name);
@@ -40,9 +42,9 @@ export class Var extends Neutral {
 }
 
 export class Appl extends Neutral {
-    public constructor(public rator: Neutral, public rand: Normal) {
-        super();
-    }
+    public constructor(
+        public rator: Neutral, public rand: Normal
+    ) { super(); }
 
     public override read_back(context: V.Rho): C.Core {
         const core_rator = this.rator.read_back(context),
@@ -52,9 +54,7 @@ export class Appl extends Neutral {
 }
 
 export class Car extends Neutral {
-    public constructor(public pair: Neutral) {
-        super();
-    }
+    public constructor(public pair: Neutral) { super(); }
 
     public override read_back(context: V.Rho): C.Core {
         const core_pair = this.pair.read_back(context);
@@ -63,9 +63,7 @@ export class Car extends Neutral {
 }
 
 export class Cdr extends Neutral {
-    public constructor(public pair: Neutral) {
-        super();
-    }
+    public constructor(public pair: Neutral) { super(); }
 
     public override read_back(context: V.Rho): C.Core {
         const core_pair = this.pair.read_back(context);
@@ -73,19 +71,15 @@ export class Cdr extends Neutral {
     }
 }
 
-export class IndCoproduct extends Neutral {
+export class Match extends Neutral {
     public constructor(
         public target: Neutral,
-        public motive: V.Value,
-        public left: Normal,
-        public right: Normal
+        public arms: I.List<C.Arm>,
+        public motive: Normal
     ) { super(); }
 
     public override read_back(context: V.Rho): C.Core {
         const core_target = this.target.read_back(context);
-        const core_left = this.left.read_back(context);
-        const core_right = this.right.read_back(context);
-
-        return new C.IndCoproduct(core_target, this.motive, core_left, core_right);
+        return new C.Match(core_target, this.arms, this.motive.value);
     }
 }

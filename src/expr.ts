@@ -685,7 +685,7 @@ export class Match extends Expr {
         A.covers(patterns, type_target);
 
         return {
-            expr: new C.Match(core_target, core_arms),
+            expr: new C.Match(core_target, core_arms, type_body),
             type: type_body
         };
     }

@@ -499,17 +499,23 @@ export class Arm {
 export class Match extends Core {
     public constructor(
         public target: Core,
-        public arms: I.List<Arm>
+        public arms: I.List<Arm>,
+        public motive: V.Value
     ) { super(); }
 
     public override eval(rho: V.Rho): V.Value {
         const eval_target = this.target.eval(rho);
-        const matched_arm = this.arms.find(arm => arm.pattern.admits(eval_target));
-        if (matched_arm) {
-            const new_rho = matched_arm.pattern.extend_rho(rho, eval_target);
-            return matched_arm.body.eval(new_rho);
+        if (eval_target instanceof V.Neutral) {
+            const motive = new N.Normal(this.motive, new V.U());
+            return new V.Neutral(this.motive, new N.Match(eval_target.neutral, this.arms, motive));
         } else {
-            throw new Error("Unexhaustive match");
+            const matched_arm = this.arms.find(arm => arm.pattern.admits(eval_target));
+            if (matched_arm) {
+                const new_rho = matched_arm.pattern.extend_rho(rho, eval_target);
+                return matched_arm.body.eval(new_rho);
+            } else {
+                throw new Error("Unexhaustive match");
+            }
         }
     }
 
