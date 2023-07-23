@@ -2,6 +2,7 @@ import * as C from "./core.ts";
 import * as V from "./value.ts";
 import * as N from "./neutral.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
+import * as A from "./pattern.ts";
 
 type Symbol = string;
 
@@ -597,8 +598,8 @@ export class Appl extends Expr {
             const args = this.args.slice(0, this.args.length - 1);
             const appl = new Appl(this.func, args);
             const { type, expr: core_appl } = appl.synth(context) as {
-                type: V.Pi;
-                expr: C.Core;
+                type: V.Pi,
+                expr: C.Core
             };
 
             const arg = this.args[this.args.length - 1];
@@ -613,19 +614,23 @@ export class Appl extends Expr {
             };
         } else {
             const arg = this.args[0];
-            const { type, expr: core_func } = this.func.synth(context) as {
-                type: V.Pi;
-                expr: C.Core;
-            };
-            const core_arg = arg.check(context, type.value);
+            const { type, expr: core_func } = this.func.synth(context);
+            if (type instanceof V.Pi) {
+                const core_arg = arg.check(context, type.value);
 
-            return {
-                type: type.body.instantiate(
-                    type.name,
-                    run_eval(core_arg, context),
-                ),
-                expr: new C.Appl(core_func, core_arg),
-            };
+                return {
+                    type: type.body.instantiate(
+                        type.name,
+                        run_eval(core_arg, context),
+                    ),
+                    expr: new C.Appl(core_func, core_arg),
+                };
+            } else if (type instanceof V.Datatype) {
+                // TODO
+                throw new Error("");
+            } else {
+                throw new Error("Can only apply to function types");
+            }
         }
     }
 }
@@ -638,5 +643,50 @@ export class U extends Expr {
 
     public override isType(_context: Context): C.Core {
         return new C.U();
+    }
+}
+
+export class Arm {
+    public constructor(
+        public pattern: A.Pattern,
+        public body: Expr
+    ) { }
+
+    public check(context: Context, type: V.Value, against: V.Value): C.Arm {
+        const new_context = this.pattern.extend_context(context, type);
+        const core_body = this.body.check(new_context, against);
+        return new C.Arm(this.pattern, core_body);
+    }
+
+    public synth(context: Context, type: V.Value): { type: V.Value, expr: C.Arm } {
+        const new_context = this.pattern.extend_context(context, type);
+        const { expr: core_body, type: type_body } = this.body.synth(new_context);
+        return { expr: new C.Arm(this.pattern, core_body), type: type_body };
+    }
+}
+
+export class Match extends Expr {
+    public description = "match expression";
+
+    public constructor(
+        public target: Expr,
+        public arms: I.List<Arm>
+    ) { super(); }
+
+    public override synth(context: Context): SynthResult {
+        const { expr: core_target, type: type_target } = this.target.synth(context);
+        const first_arm = this.arms.first()!, other_arms = this.arms.skip(1);
+        const { expr: core_first_arm, type: type_body } = first_arm.synth(context, type_target);
+        const core_arms = other_arms
+            .map(arm => arm.check(context, type_target, type_body))
+            .insert(0, core_first_arm);
+
+        const patterns = this.arms.map(arm => arm.pattern);
+        A.covers(patterns, type_target);
+
+        return {
+            expr: new C.Match(core_target, core_arms),
+            type: type_body
+        };
     }
 }

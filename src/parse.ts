@@ -1,6 +1,5 @@
 import * as T from "./toplevel.ts";
 import * as E from "./expr.ts";
-import * as M from "./match.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 
 // I won't even bother to document this hot mess of a file, i will need to change it in future anyhow

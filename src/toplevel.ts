@@ -71,7 +71,7 @@ export class Claim implements TopLevel {
     /**
      * Check whether the body is a type and then add it to the context
      */
-    public eval(gamma: Context) {
+    public eval(gamma: Context): Context {
         const expr_env = to_expr_env(gamma);
         const core = this.type.isType(expr_env);
         const value = core.eval(E.to_rho(expr_env));
@@ -93,7 +93,7 @@ export class CheckSame implements TopLevel {
     /**
      * Evaluate the type, check the two expressions against that type and then check the values
      */
-    public eval(gamma: Context) {
+    public eval(gamma: Context): Context {
         const expr_env = to_expr_env(gamma);
         const rho = E.to_rho(expr_env);
         const type_value = this.type.isType(expr_env).eval(rho);
@@ -107,134 +107,74 @@ export class CheckSame implements TopLevel {
     }
 }
 
-type Param = { name: Symbol, type: E.Expr };
+type Param = { name: Symbol, value: E.Expr };
 
-/**
- * Represents a single constructor for a datatype
- */
 export class Constructor {
-    /**
-     * @param name the name of the constructor
-     * @param params a list of parameters
-     * @param index the index into the list of constructors in the parent datatype
-     */
     public constructor(
         public name: Symbol,
-        public params: I.List<Param>,
-        public index: number
+        public parameters: I.List<Param>,
+        public ret_type: I.List<E.Expr>
     ) { }
 
-    /**
-     * Generates the sum type representing this constructor, this type canonically
-     * represents this constructor as a value
-     * @param gamma the parent datatype's context
-     * @returns the sum type describing this constructor
-     */
-    public to_sum_type(gamma: Context): C.Core {
-        const expr_env = to_expr_env(gamma);
-        const [last, ...rest] = this.params
-            .map(param => ({ name: param.name, type: param.type.isType(expr_env) }))
-            .reverse();
-        return rest.reduce((a, { name, type }) => new C.Sigma(name, type, a), last.type);
+    public to_core(): C.Core {
+        const args = this.parameters.map(({ name }) => new C.Var(name));
+        const constr: C.Core = new C.Constructor(this.name, args);
+        return this.parameters.reduceRight((acc, { name }) => new C.Lambda(name, acc), constr);
     }
 
-    /**
-     * Generate a pi type that represents a function that creates this
-     * constructor's sumtype in the parent's datatype
-     * @param gamma the parent datatype's context
-     * @param data_type the datatype's full type
-     * @returns a pi type that creates the parent's datatype using this constructor
-     */
-    public to_pi_type(gamma: Context, data_type: C.Core): C.Core {
-        const expr_env = to_expr_env(gamma);
-        return this.params
-            .map(param => ({ name: param.name, type: param.type.isType(expr_env) }))
-            .reduceRight((a, { name, type }) => new C.Pi(name, type, a), data_type);
+    public to_type(context: Context, datatype: C.Core): C.Core {
+        const expr_env = to_expr_env(context);
+        const param_types = this.parameters.map(({ name, value }) => ({ name, value: value.isType(expr_env) }));
+        return param_types.reduce((acc, { name, value }) => new C.Pi(name, value, acc), datatype);
     }
 
-    /**
-     * Generate the necessary inls and inrs around the given body to correctly represent the variant
-     * @param index the index into the datatype's constructor list
-     * @param max_variants the number of variants in the n-ary coproduct
-     * @param body the body that the inls and inrs should wrap around
-     * @returns a series of inls and inrs that represent the index into the parent's datatype
-     */
-    private static to_coproduct(index: number, max_variants: number, body: C.Core): C.Core {
-        return I.Range(0, index).reduce(acc => new C.Inr(acc),
-            index === max_variants
-                ? body
-                : new C.Inl(body));
-    }
-
-    /**
-     * Count the number of variants in a coproduct type
-     * @param record_type the coproduct type to count the variants of
-     * @returns the number of variants
-     */
-    private static max_variants(record_type: C.Core): number {
-        // Record type coproducts associate rightwards
-        return record_type instanceof C.Coproduct
-            ? 1 + Constructor.max_variants(record_type.right)
-            : 0;
-    }
-
-    /**
-     * Generate a lambda that creates an instance of this constructor
-     * @param gamma the parent datatype's context
-     * @param record_type the parent datatype's canonical representation
-     * @returns a core expression to create this constructor
-     */
-    public to_function(gamma: Context, record_type: C.Core): C.Core {
-        const bound = gamma.map(e => e.name);
-        const inner_body: C.Core = this.params
-            .map(({ name }) => new C.Var(V.fresh(bound, name)))
-            .reduceRight((a, b) => new C.Cons(b, a));
-        const coproduct_body = Constructor.to_coproduct(this.index, Constructor.max_variants(record_type), inner_body);
-        return this.params.reduceRight((a, p) => new C.Lambda(p.name, a), coproduct_body);
+    public to_constructor_type(context: Context, name: Symbol, ret_type_types: I.List<V.Value>): C.ConstructorType {
+        const expr_env = to_expr_env(context);
+        const fields = this.parameters
+            .toOrderedMap()
+            .mapEntries(([_, param]) => [param.name, param.value.isType(expr_env)]);
+        const core_ret_type = this.ret_type.zipWith((v, t) => v.check(expr_env, t), ret_type_types);
+        return new C.ConstructorType(fields, name, core_ret_type);
     }
 }
 
-/**
- * Concrete toplevel class for datatype definition
- */
 export class Data implements TopLevel {
-    /**
-     * @param name name of the datatype
-     * @param fields a list of constructors
-     */
     public constructor(
         public name: Symbol,
-        public fields: I.List<Constructor>
+        public parameters: I.List<Param>,
+        public indices: I.List<Param>,
+        public constructors: I.List<Constructor>
     ) { }
 
-    /**
-     * Generate the canonicalised type that should be associated with the name of the datatype.
-     * @param gamma the context of the datatype definition
-     * @returns the constructors' types separated with coproducts
-     */
     private to_type(gamma: Context): C.Core {
-        return this.fields
-            .map(field => field.to_sum_type(gamma))
-            .reduceRight((a, t) => new C.Coproduct(t, a));
+        const expr_env = to_expr_env(gamma);
+        return this.parameters
+            .concat(this.indices)
+            .map(({ name, value }) => ({ name, value: value.isType(expr_env) }))
+            .reduceRight((acc, { name, value }) => new C.Pi(name, value, acc), new C.U());
     }
 
-    /**
-     * Datatype definitions add the datatype itself (claim and define) and
-     * each constructor's type and creation function to the context
-     */
+    private to_core(gamma: Context): C.Core {
+        const expr_env = to_expr_env(gamma), rho = E.to_rho(expr_env);
+        const ret_type_types = this.parameters
+            .concat(this.indices)
+            .map(({ value }) => value.isType(expr_env));
+        const constrs = this.constructors
+            .toMap()
+            .mapEntries(([_, constr]) => [constr.name, constr.to_constructor_type(gamma, this.name, ret_type_types.map(t => t.eval(rho)))]);
+        const body: C.Core = new C.Datatype(this.name, constrs, ret_type_types); 
+        return this.parameters
+            .concat(this.indices)
+            .reduceRight((acc, { name }) => new C.Lambda(name, acc), body);
+    }
+
     public eval(gamma: Context): Context {
         const expr_env = to_expr_env(gamma), rho = E.to_rho(expr_env);
-        const core_record = this.to_type(gamma), record_type = core_record.eval(rho);
-        gamma = gamma
-            .push({ name: this.name, type: "Claim", value: new V.U() })
-            .push({ name: this.name, type: "Define", value: record_type });
-
-        const constr_types: Context = this.fields.flatMap(construct => [
-            { name: construct.name, type: "Claim", value: new V.U() },
-            { name: construct.name, type: "Define", value: construct.to_sum_type(gamma).eval(rho) },
-            { name: `make-${construct.name}`, type: "Claim", value: construct.to_pi_type(gamma, core_record).eval(rho) },
-            { name: `make-${construct.name}`, type: "Define", value: construct.to_function(gamma, core_record).eval(rho) }
-        ]);
-        return gamma.concat(constr_types);
+        return this.constructors
+            .reduce((env, constr) => env
+                .push({ type: "Claim",  name: constr.name, value: constr.to_type(gamma, this.to_core(gamma)).eval(rho) })
+                .push({ type: "Define", name: constr.name, value: constr.to_core().eval(rho) }), gamma)
+            .push({ type: "Claim",  name: this.name, value: this.to_type(gamma).eval(rho) })
+            .push({ type: "Define", name: this.name, value: this.to_core(gamma).eval(rho) });
     }
 }

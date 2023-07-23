@@ -1,7 +1,7 @@
 import * as V from "./value.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as N from "./neutral.ts";
-import { C } from "./index.ts";
+import * as A from "./pattern.ts";
 
 type Symbol = string;
 
@@ -414,132 +414,116 @@ export class U extends Core {
     }
 }
 
-export class Coproduct extends Core {
-    /**
-     * @param left the first variant
-     * @param right the second variant
-     */
+// Data types
+
+export class Constructor extends Core {
     public constructor(
-        public left: Core,
-        public right: Core
+        public name: Symbol,
+        public args: I.List<Core>
     ) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
-        const value_left = this.left.eval(gamma),
-              value_right = this.right.eval(gamma);
-        return new V.Coproduct(value_left, value_right);
+    public override eval(rho: V.Rho): V.Value {
+        const args = this.args.map(arg => arg.eval(rho));
+        return new V.Constructor(this.name, args);
     }
 
     public override alpha_equiv(other: Core, context: Renamings): void {
-        if (other instanceof Coproduct) {
-            this.left.alpha_equiv(other.left, context);
-            this.right.alpha_equiv(other.right, context);
+        if (other instanceof Constructor) {
+            if (this.name !== other.name)
+                throw new Error("Names of constructors must match up");
+            this.args.zipWith((a, b) => a.alpha_equiv(b, context), other.args);
         } else {
-            throw new Error("Not structurally equiv Coproduct");
+            throw new Error("Not structurally equiv Constructor");
         }
     }
 
     public override toString(): string {
-        return `(+ ${this.left.toString()} ${this.right.toString()})`;
+        return `(${this.name} ${this.args.join(" ")})`;
     }
 }
 
-export class Inl extends Core {
-    /**
-     * @param value the expression to promote to a coproduct
-     */
-    public constructor(public value: Core) { super(); }
+export class ConstructorType {
+    public constructor(
+        public fields: I.OrderedMap<Symbol, Core>,
+        public type: Symbol,
+        public parameters: I.List<Core>
+    ) { }
 
-    public override eval(gamma: V.Rho): V.Value {
-        return new V.Inl(this.value.eval(gamma));
+    public eval(rho: V.Rho): V.ConstructorType {
+        const eval_fields = this.fields.map(field => field.eval(rho));
+        const parameters = this.parameters.map(param => param.eval(rho));
+        return new V.ConstructorType(eval_fields, this.type, parameters);
+    }
+}
+
+export class Datatype extends Core {
+    public constructor(
+        public name: Symbol,
+        public constructors: I.Map<Symbol, ConstructorType>,
+        public parameters: I.List<Core>
+    ) { super(); }
+
+    public override eval(rho: V.Rho): V.Value {
+        const constrs = this.constructors.map(constr => constr.eval(rho));
+        const parameters = this.parameters.map(param => param.eval(rho));
+        return new V.Datatype(this.name, constrs, parameters);
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
-        if (other instanceof Inl) {
-            this.value.alpha_equiv(other.value, context);
-        } else {
-            throw new Error("Not structurally equiv Inl");
-        }
+    public override alpha_equiv(other: Core, _context: Renamings): void {
+        if (!(other instanceof Datatype && this.name === other.name))
+            throw new Error("Not structurally equiv Datatype");
     }
 
     public override toString(): string {
-        return `(inl ${this.value.toString()})`;
+        return "";
     }
 }
 
-export class Inr extends Core {
-    /**
-     * @param value the expression to promote to a coproduct
-     */
-    public constructor(public value: Core) { super(); }
+export class Arm {
+    public constructor(
+        public pattern: A.Pattern,
+        public body: Core
+    ) { }
 
-    public override eval(gamma: V.Rho): V.Value {
-        return new V.Inr(this.value.eval(gamma));
+    public alpha_equiv(other: Arm, context: Renamings): void {
+        this.pattern.is_same(other.pattern);
+        const new_context = this.pattern.extend_renamings(context, other.pattern);
+        this.body.alpha_equiv(other.body, new_context);
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
-        if (other instanceof Inr) {
-            this.value.alpha_equiv(other.value, context);
-        } else {
-            throw new Error("Not structurally equiv Inr");
-        }
-    }
-
-    public override toString(): string {
-        return `(inr ${this.value.toString()})`;
+    public toString(): string {
+        return `(${this.pattern.toString()} ${this.body.toString()})`;
     }
 }
 
-export class IndCoproduct extends Core {
-    /**
-     * @param target the value with either inr or inl on top
-     * @param motive the result type of both branches and the result of the elimation
-     * @param left the function to execute when target has inl on top
-     * @param right the function to execute when target has inr on top
-     */
+export class Match extends Core {
     public constructor(
         public target: Core,
-        public motive: V.Value,
-        public left: Core,
-        public right: Core
+        public arms: I.List<Arm>
     ) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
-        const target = this.target.eval(gamma) as V.Neutral | V.Inl | V.Inr;
-        if (target instanceof V.Neutral && target.type instanceof V.Coproduct) {
-            const left_type = new C.Pi("L", new C.Var("left"), new C.Var("motive"))
-                .eval(I.Map({ left: target.type.left, motive: this.motive }));
-            const right_type = new C.Pi("R", new C.Var("right"), new C.Var("motive"))
-                .eval(I.Map({ right: target.type.right, motive: this.motive }));
-            return new V.Neutral(
-                this.motive,
-                new N.IndCoproduct(
-                    target.neutral,
-                    this.motive,
-                    new N.Normal(this.left.eval(gamma), left_type),
-                    new N.Normal(this.right.eval(gamma), right_type)
-                )
-            );
-        } else if (target instanceof V.Inl) {
-            const func = this.left.eval(gamma);
-            return V.apply_many(func, target.value);
+    public override eval(rho: V.Rho): V.Value {
+        const eval_target = this.target.eval(rho);
+        const matched_arm = this.arms.find(arm => arm.pattern.admits(eval_target));
+        if (matched_arm) {
+            const new_rho = matched_arm.pattern.extend_rho(rho, eval_target);
+            return matched_arm.body.eval(new_rho);
         } else {
-            const func = this.right.eval(gamma);
-            return V.apply_many(func, (target as V.Inr).value);
+            throw new Error("Unexhaustive match");
         }
     }
-        
+
     public override alpha_equiv(other: Core, context: Renamings): void {
-        if (other instanceof IndCoproduct) {
+        if (other instanceof Match) {
             this.target.alpha_equiv(other.target, context);
-            this.left.alpha_equiv(other.left, context);
-            this.right.alpha_equiv(other.right, context);
+            this.arms.zipWith((left, right) => left.alpha_equiv(right, context), other.arms);
         } else {
-            throw new Error("Not structurally equiv IndCoproduct");
+            throw new Error("Not structurally equiv Match");
         }
     }
 
     public override toString(): string {
-        return `(ind-+ ${this.target.toString()} ${this.left.toString()} ${this.right.toString()})`;
+        const arms = this.arms.map(arm => arm.toString()).join(" ");
+        return `(match ${this.target.toString()} ${arms})`;
     }
 }

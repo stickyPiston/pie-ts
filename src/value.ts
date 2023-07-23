@@ -238,51 +238,61 @@ export class Neutral extends Value {
     }
 }
 
-export class Coproduct extends Type {
-    public description = "Coproduct expression";
-    public constructor(public left: Value, public right: Value) { super(); }
+// Data types
 
-    public override read_back_type(context: Rho, bound: Bound) {
-        const core_l = this.left.read_back_type(context, bound),
-              core_r = this.right.read_back_type(context, bound);
-        return new C.Coproduct(core_l, core_r);
-    }
+export class Constructor extends Value {
+    public description = "Constructor";
 
-    public override toString(): string {
-        return `(+ ${this.left} ${this.right})`;
-    }
-}
-
-export class Inl extends Value {
-    public description = "Inl expression";
-    public constructor(public value: Value) { super(); }
+    public constructor(
+        public name: Symbol,
+        public args: I.List<Value>
+    ) { super(); }
 
     public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Coproduct) {
-            return new C.Inl(this.value.read_back(context, bound, type.left));
+        if (type instanceof Datatype && type.constructors.has(this.name)) {
+            const constr_type = type.constructors.get(this.name) as ConstructorType;
+            const core_args = this.args.zipWith((arg, field) => arg.read_back(context, bound, field), constr_type.fields);
+            return new C.Constructor(this.name, core_args);
         } else {
             return super.read_back(context, bound, type);
         }
     }
 
     public override toString(): string {
-        return `(inl ${this.value})`;
+        return `(${this.name} ${this.args.join(" ")})`;
     }
 }
 
-export class Inr extends Value {
-    public description = "Inr expression";
-    public constructor(public value: Value) { super(); }
+export class ConstructorType {
+    public constructor(
+        public fields: I.OrderedMap<Symbol, Value>,
+        public type: Symbol,
+        public parameters: I.List<Value>
+    ) { }
 
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Coproduct) {
-            return new C.Inr(this.value.read_back(context, bound, type.right));
-        } else {
-            return super.read_back(context, bound, type);
-        }
+    public read_back(parameter_types: I.List<Value>, context: Rho, bound: Bound): C.ConstructorType {
+        const core_fields = this.fields.map(field => field.read_back_type(context, bound));
+        const core_parameters = this.parameters.zipWith((param, type) => param.read_back(context, bound, type), parameter_types);
+        return new C.ConstructorType(core_fields, this.type, core_parameters);
+    }
+}
+
+export class Datatype extends Type {
+    public description = "Datatype";
+
+    public constructor(
+        public name: Symbol,
+        public constructors: I.OrderedMap<Symbol, ConstructorType>,
+        public parameters: I.List<Value>
+    ) { super(); }
+
+    public override read_back_type(context: Rho, bound: Bound): C.Core {
+        const constrs = this.constructors.map(type => type.read_back(this.parameters, context, bound));
+        const parameters = this.parameters.map(param => param.read_back_type(context, bound));
+        return new C.Datatype(this.name, constrs, parameters);
     }
 
     public override toString(): string {
-        return `(inr ${this.value})`;
+        return `(data ${this.name} ${this.constructors.join(" ")})`;
     }
 }
