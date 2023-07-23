@@ -74,6 +74,7 @@ export class Cdr extends Neutral {
 export class Match extends Neutral {
     public constructor(
         public target: Neutral,
+        // arms don't need to be converted to neutrals
         public arms: I.List<C.Arm>,
         public motive: Normal
     ) { super(); }

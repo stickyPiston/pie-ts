@@ -6,17 +6,56 @@ import * as N from "./neutral.ts";
 
 type Symbol = string;
 
+/**
+ * Patterns are used in match arms to describe the possible structure of a value
+ */
 export abstract class Pattern {
+    /**
+     * Check whether a pattern admits to a value, i.e. whether a value is matched by this pattern
+     * @param against the value to test against
+     */
     public abstract admits(against: V.Value): boolean;
 
+    /**
+     * Extend the context with the binders in the pattern for expression contexts
+     * @param context the context of the match expression
+     * @param type the type of the target of the (sub)pattern
+     */
     public abstract extend_context(context: E.Context, type: V.Value): E.Context;
+
+    /**
+     * Extend the runtime context with the binders in the pattern associated with the matched target
+     * @param context the runtime context of the match expression
+     * @param value the value of the target
+     */
     public abstract extend_rho(context: V.Rho, value: V.Value): V.Rho;
+
+    /**
+     * Extend the alpha equivalence context with the binders in the pattern
+     * @param context the renamings of the match expression
+     * @param other the other pattern
+     */
     public abstract extend_renamings(context: C.Renamings, other: Pattern): C.Renamings;
 
+    /**
+     * Check whether two patterns are structurally the same
+     * @param other the other pattern
+     * @throws when the patterns are not the same, so that it can be used in alpha_equiv methods
+     */
     public abstract is_same(other: Pattern): void;
+
+    /**
+     * toString method
+     */
     public abstract toString(): string;
 }
 
+/**
+ * Check whether the patterns covers the given type and only the given type
+ * @param patterns the patterns to check the type against
+ * @param type the type to check the patterns for
+ * @throws when there an error in the coverage of the patterns
+ */
 export function covers(patterns: I.List<Pattern>, type: V.Value): void {
     // Check whether all patterns destruct the type
     patterns.forEach(pattern => {
@@ -40,6 +79,9 @@ export function covers(patterns: I.List<Pattern>, type: V.Value): void {
     });
 }
 
+/**
+ * Holes are the patterns that match anything and do not introduce any binders
+ */
 export class Hole extends Pattern {
     public override admits(_against: V.Value): boolean {
         return true;
@@ -67,6 +109,9 @@ export class Hole extends Pattern {
     }
 }
 
+/**
+ * Var is the same pattern as Hole but it does introduce a binder
+ */
 export class Var extends Pattern {
     public constructor(
         public name: Symbol
@@ -98,6 +143,9 @@ export class Var extends Pattern {
     }
 }
 
+/**
+ * A pattern to destructure any datatype
+ */
 export class Datatype extends Pattern {
     public constructor(
         public constr: Symbol,
@@ -157,6 +205,9 @@ export class Datatype extends Pattern {
     }
 }
 
+/**
+ * A pattern to destructure atoms
+ */
 export class Atom extends Pattern {
     public constructor(
         public name: Symbol
@@ -188,6 +239,9 @@ export class Atom extends Pattern {
     }
 }
 
+/**
+ * Pattern to destructure conses
+ */
 export class Sigma extends Pattern {
     public constructor(
         public left: Pattern,
