@@ -1,0 +1,10 @@
+(data Person () ()
+    (Professor (firstname Atom) (lastname Atom) (course Atom) Person)
+    (Student (firstname Atom) (lastname Atom) Person))
+(check-same Atom
+    'Doe
+    (match (Student 'John 'Doe)
+        ((Professor firstname lastname) lastname)
+        ((Student 'John 'Does) 'Does)
+        ((Student 'John lastname) lastname)
+        (_ 'hole)))
