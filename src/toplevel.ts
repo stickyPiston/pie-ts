@@ -125,15 +125,19 @@ export class Constructor {
     public constructor(
         public name: Symbol,
         public parameters: I.List<Param>,
-        public ret_type: I.List<E.Expr>
+        public type_name: Symbol,
+        public type: I.List<E.Expr>
     ) { }
 
     /**
      * Create a core expression to introduce a constructor
      */
-    public to_core(): C.Core {
-        const args = this.parameters.map(({ name }) => new C.Var(name));
-        const constr: C.Core = new C.Constructor(this.name, args);
+    public to_core(gamma: E.Context, datatype: C.Datatype): C.Core {
+        const args = this.parameters.map(({ name, value }) => {
+            gamma = gamma.push({ type: "HasType", name, value: new V.U() });
+            return { expr: new C.Var(name), type: value.isType(gamma) };
+        });
+        const constr: C.Core = new C.Constructor(this.name, args, datatype);
         return this.parameters.reduceRight((acc, { name }) => new C.Lambda(name, acc), constr);
     }
 
@@ -143,26 +147,22 @@ export class Constructor {
      * @param datatype the core expression representing the parent datatype
      * @returns the core expression representing the the result of Constructor.to_core()
      */
-    public to_type(context: Context, datatype: C.Core): C.Core {
-        const expr_env = to_expr_env(context);
-        const param_types = this.parameters.map(({ name, value }) => ({ name, value: value.isType(expr_env) }));
-        return param_types.reduce((acc, { name, value }) => new C.Pi(name, value, acc), datatype);
+    public to_type(gamma: E.Context, datatype: C.Core): C.Core {
+        const param_types = this.parameters.map(({ name, value }) => {
+            gamma = gamma.push({ type: "HasType", name, value: new V.U() });
+            return { name, value: value.isType(gamma) };
+        });
+        return param_types.reduceRight((acc, { name, value }) => new C.Pi(name, value, acc), datatype);
     }
 
-    /**
-     * Create the constructor type for use in datatype's core expression
-     * @param context the top level context of the data expression
-     * @param name the name of the parent data type
-     * @param ret_type_types the parameter and index types of the parent datatype
-     * @returns a constructor type used in the datatype's core expression representation
-     */
-    public to_constructor_type(context: Context, name: Symbol, ret_type_types: I.List<V.Value>): C.ConstructorType {
-        const expr_env = to_expr_env(context);
-        const fields = this.parameters
-            .toOrderedMap()
-            .mapEntries(([_, param]) => [param.name, param.value.isType(expr_env)]);
-        const core_ret_type = this.ret_type.zipWith((v, t) => v.check(expr_env, t), ret_type_types);
-        return new C.ConstructorType(fields, name, core_ret_type);
+    public to_info(gamma: E.Context, parameters: I.List<V.Value>, indices: I.List<V.Value>): C.ConstructorInfo {
+        return new C.ConstructorInfo(
+            this.parameters.map(({ name, value }) => {
+                gamma = gamma.push({ type: "HasType", name, value: new V.U() });
+                return { name, value: value.isType(gamma) };
+            }),
+            this.type.zipWith((t, type) => t.check(gamma, type), parameters.concat(indices))
+        );
     }
 }
 
@@ -182,12 +182,24 @@ export class Data implements TopLevel {
      * @param gamma the top level context of the data statement
      * @returns the pi expressions that represent the function creating this datatype
      */
-    private to_type(gamma: Context): C.Core {
-        const expr_env = to_expr_env(gamma);
+    private to_type(gamma: E.Context): C.Core {
         return this.parameters
             .concat(this.indices)
-            .map(({ name, value }) => ({ name, value: value.isType(expr_env) }))
+            .map(({ name, value }) => ({ name, value: value.isType(gamma) }))
             .reduceRight((acc, { name, value }) => new C.Pi(name, value, acc), new C.U());
+    }
+
+    private to_datatype(gamma: E.Context, rho: V.Rho): C.Datatype {
+        const parameters = Data.eval_parameters(this.parameters, gamma),
+              indices = Data.eval_parameters(this.indices, gamma);
+        const constructors = this.constructors.toMap().mapEntries(([_, c]) => [
+            c.name,
+            c.to_info(
+                gamma,
+                parameters.map(({ type }) => type.eval(rho)),
+                indices.map(({ type }) => type.eval(rho))
+            )]);
+        return new C.Datatype(this.name, parameters, indices, constructors);
     }
 
     /**
@@ -195,30 +207,31 @@ export class Data implements TopLevel {
      * @param gamma the top level context of the data statement
      * @returns the core expression for the function creating the datatype's type
      */
-    private to_core(gamma: Context): C.Core {
-        const expr_env = to_expr_env(gamma), rho = E.to_rho(expr_env);
-        const ret_type_types = this.parameters
-            .concat(this.indices)
-            .map(({ value }) => value.isType(expr_env));
-        const constrs = this.constructors
-            .toMap()
-            .mapEntries(([_, constr]) => [constr.name, constr.to_constructor_type(gamma, this.name, ret_type_types.map(t => t.eval(rho)))]);
-        const body: C.Core = new C.Datatype(this.name, constrs, ret_type_types); 
+    private to_core(body: C.Core): C.Core {
         return this.parameters
             .concat(this.indices)
             .reduceRight((acc, { name }) => new C.Lambda(name, acc), body);
     }
 
+    private static eval_parameters(parameters: I.List<Param>, gamma: E.Context): I.List<C.DatatypeParameter> {
+        return parameters.map(({ name, value }) => ({ expr: new C.Var(name), type: value.isType(gamma) }));
+    }
+
     /**
      * A datatype definition introduces the bindings for the type and for each of the constructors
      */
-    public eval(gamma: Context): Context {
-        const expr_env = to_expr_env(gamma), rho = E.to_rho(expr_env);
-        return this.constructors
+    public eval(context: Context): Context {
+        if (!this.constructors.every(constr => constr.type_name === this.name))
+            throw new Error("The constructors need to return an instance of the datatype");
+
+        const gamma = to_expr_env(context), rho = E.to_rho(gamma);
+        const datatype = this.to_datatype(gamma, rho);
+        context = this.constructors
             .reduce((env, constr) => env
-                .push({ type: "Claim",  name: constr.name, value: constr.to_type(gamma, this.to_core(gamma)).eval(rho) })
-                .push({ type: "Define", name: constr.name, value: constr.to_core().eval(rho) }), gamma)
+                .push({ type: "Claim",  name: constr.name, value: constr.to_type(gamma, datatype).eval(rho) })
+                .push({ type: "Define", name: constr.name, value: constr.to_core(gamma, datatype).eval(rho) }), context)
             .push({ type: "Claim",  name: this.name, value: this.to_type(gamma).eval(rho) })
-            .push({ type: "Define", name: this.name, value: this.to_core(gamma).eval(rho) });
+            .push({ type: "Define", name: this.name, value: this.to_core(datatype).eval(rho) });
+        return context;
     }
 }

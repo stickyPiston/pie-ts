@@ -17,4 +17,5 @@
 import { I, P, T } from "../src/index.ts";
 
 const ast = P.parse(await Deno.readTextFile("examples/match.pie"));
+// console.log(ast);
 console.log(ast.reduce((gamma, x) => x.eval(gamma), I.List() as T.Context));

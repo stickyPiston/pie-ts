@@ -1,6 +1,6 @@
 {
     "tasks": {
-        "start": "deno run app/index.ts"
+        "start": "deno run --allow-read app/index.ts"
     },
     "fmt": {
         "indentWidth": 4,

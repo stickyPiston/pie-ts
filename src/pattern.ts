@@ -68,8 +68,8 @@ export function covers(patterns: I.List<Pattern>, type: V.Value): void {
         } else if (type instanceof V.Datatype) {
             if (!(pattern instanceof Datatype))
                 throw new Error("Cannot destruct constructor with non-constructor pattern");
-            if (!type.constructors.has(pattern.constr))
-                throw new Error("Cannot destructure datatype with constructor from another datatype");
+            // if (!type.constructors.has(pattern.constr))
+            //     throw new Error("Cannot destructure datatype with constructor from another datatype");
         } else if (type instanceof V.Sigma) {
             if (!(pattern instanceof Sigma))
                 throw new Error("Cannot destruct cons with non-cons pattern");
@@ -156,18 +156,18 @@ export class Datatype extends Pattern {
     public override admits(against: V.Value): boolean {
         return against instanceof V.Constructor
             && against.name === this.constr
-            && this.binders.zip(against.args).every(([binder, arg]) => binder.admits(arg));
+            && this.binders.zip(against.args).every(([binder, arg]) => binder.admits(arg.expr));
     }
 
     public override extend_context(context: E.Context, type: V.Value): E.Context {
         if (type instanceof V.Datatype) {
-            const constr = type.constructors.get(this.constr)!;
+            const info = type.constructors.get(this.constr)!;
             const new_context = this.name
                 ? context.push({ type: "HasType", name: this.name, value: type })
                 : context;
-            // There's an error with the typing definition of zip with lists and ordered maps, so a manual cast is needed
-            const new_binders = this.binders.zip(constr.fields) as unknown as I.List<[Pattern, [Symbol, V.Value]]>;
-            return new_binders.reduce((context, [pattern, [_, arg]]) => pattern.extend_context(context, arg), new_context);
+
+            const new_binders = this.binders.zip(info.parameters.map(({ value }) => value));
+            return new_binders.reduce((context, [pattern, type]) => pattern.extend_context(context, type), new_context);
         } else {
             throw new Error("Cannot destruct non-constructor variable with datatype pattern");
         }
@@ -178,7 +178,7 @@ export class Datatype extends Pattern {
             const new_context = this.name ? context.set(this.name, value) : context;
             return this.binders
                 .zip(value.args)
-                .reduce((context, [pattern, arg]) => pattern.extend_rho(context, arg), new_context);
+                .reduce((context, [pattern, arg]) => pattern.extend_rho(context, arg.expr), new_context);
         } else {
             throw new Error("Cannot destruct non-constructor variable with datatype pattern");
         }

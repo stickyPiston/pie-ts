@@ -1,10 +1,8 @@
-(data Person () ()
-    (Professor (firstname Atom) (lastname Atom) (course Atom) Person)
-    (Student (firstname Atom) (lastname Atom) Person))
+(data Either ((A U) (B U)) ()
+    (Left (A U) (B U) (x A) (Either A B))
+    (Right (A U) (B U) (x B) (Either A B)))
 (check-same Atom
-    'Doe
-    (match (Student 'John 'Doe)
-        ((Professor firstname lastname) lastname)
-        ((Student 'John 'Does) 'Does)
-        ((Student 'John lastname) lastname)
-        (_ 'hole)))
+    'John
+    (match (Right Atom (Pair Atom Atom) (cons 'John 'Doe))
+        ((Left _ _ atom) atom)
+        ((Right _ _ (cons l r)) l)))

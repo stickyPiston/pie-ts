@@ -416,22 +416,26 @@ export class U extends Core {
 
 // Data types
 
+export type DatatypeParameter = { expr: Core, type: Core };
+
 export class Constructor extends Core {
     public constructor(
         public name: Symbol,
-        public args: I.List<Core>
+        public args: I.List<DatatypeParameter>,
+        public type: Datatype
     ) { super(); }
 
     public override eval(rho: V.Rho): V.Value {
-        const args = this.args.map(arg => arg.eval(rho));
-        return new V.Constructor(this.name, args);
+        const args = this.args.map(({ expr, type }) => ({ expr: expr.eval(rho), type: type.eval(rho) }));
+        const datatype = this.type.eval(rho) as V.Datatype;
+        return new V.Constructor(this.name, args, datatype);
     }
 
     public override alpha_equiv(other: Core, context: Renamings): void {
         if (other instanceof Constructor) {
             if (this.name !== other.name)
                 throw new Error("Names of constructors must match up");
-            this.args.zipWith((a, b) => a.alpha_equiv(b, context), other.args);
+            this.args.zipWith((a, b) => a.expr.alpha_equiv(b.expr, context), other.args);
         } else {
             throw new Error("Not structurally equiv Constructor");
         }
@@ -442,31 +446,38 @@ export class Constructor extends Core {
     }
 }
 
-export class ConstructorType {
+type Param = { name: Symbol, value: Core };
+
+export class ConstructorInfo {
     public constructor(
-        public fields: I.OrderedMap<Symbol, Core>,
-        public type: Symbol,
-        public parameters: I.List<Core>
+        public parameters: I.List<Param>,
+        public type: I.List<Core>
     ) { }
 
-    public eval(rho: V.Rho): V.ConstructorType {
-        const eval_fields = this.fields.map(field => field.eval(rho));
-        const parameters = this.parameters.map(param => param.eval(rho));
-        return new V.ConstructorType(eval_fields, this.type, parameters);
+    public eval(rho: V.Rho): V.ConstructorInfo {
+        const parameters = this.parameters.map(({ name, value }) => ({ name, value: value.eval(rho) }));
+        const type = this.type.map(t => t.eval(rho));
+        return new V.ConstructorInfo(parameters, type);
     }
 }
 
 export class Datatype extends Core {
     public constructor(
         public name: Symbol,
-        public constructors: I.Map<Symbol, ConstructorType>,
-        public parameters: I.List<Core>
+        public parameters: I.List<DatatypeParameter>,
+        public indices: I.List<DatatypeParameter>,
+        public constructors: I.Map<Symbol, ConstructorInfo>
     ) { super(); }
 
     public override eval(rho: V.Rho): V.Value {
-        const constrs = this.constructors.map(constr => constr.eval(rho));
-        const parameters = this.parameters.map(param => param.eval(rho));
-        return new V.Datatype(this.name, constrs, parameters);
+        const parameters = Datatype.eval_parameters(this.parameters, rho);
+        const indices = Datatype.eval_parameters(this.indices, rho);
+        const constructors = this.constructors.map(c => c.eval(rho));
+        return new V.Datatype(this.name, parameters, indices, constructors);
+    }
+
+    private static eval_parameters(parameters: I.List<DatatypeParameter>, rho: V.Rho): I.List<V.DatatypeParameter> {
+        return parameters.map(({ expr, type }) => ({ expr: expr.eval(rho), type: type.eval(rho) }));
     }
 
     public override alpha_equiv(other: Core, _context: Renamings): void {

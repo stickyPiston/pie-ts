@@ -15,19 +15,19 @@ export type SynthResult = { type: V.Value; expr: C.Core };
  * A definition context entry represents a definition earlier defined by a (define ...).
  * It is also stores the type of the value for convenience
  */
-type Define = { type: "Define"; value: { type: V.Value; value: V.Value } };
+export type Define = { type: "Define"; value: { type: V.Value; value: V.Value } };
 
 /**
  * A claim declares that a variable has a type, but may not have definition yet.
  * Every (claim ...) is stored as a claim context entry
  */
-type Claim = { type: "Claim"; value: V.Value };
+export type Claim = { type: "Claim"; value: V.Value };
 
 /**
  * A HasType entry stores that a variable is defined locally by a lambda, pi, sigma, or other binder
  * and has a type. The value is not stored since this is not needed during type checking
  */
-type HasType = { type: "HasType"; value: V.Value };
+export type HasType = { type: "HasType"; value: V.Value };
 
 /**
  * Context entries have a name and either a definition, a claim or type declaration
@@ -139,6 +139,7 @@ export abstract class Expr {
     public check(context: Context, against: V.Value): C.Core {
         const { type, expr } = this.synth(context);
         const rho = to_rho(context);
+        // console.log(against, expr, type);
         against.same_type(rho, C.to_bound(rho), type);
         return expr;
     }

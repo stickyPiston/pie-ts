@@ -240,19 +240,22 @@ export class Neutral extends Value {
 
 // Data types
 
+export type DatatypeParameter = { expr: Value, type: Value };
+
 export class Constructor extends Value {
     public description = "Constructor";
 
     public constructor(
         public name: Symbol,
-        public args: I.List<Value>
+        public args: I.List<DatatypeParameter>,
+        public type: Datatype
     ) { super(); }
 
     public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
-        if (type instanceof Datatype && type.constructors.has(this.name)) {
-            const constr_type = type.constructors.get(this.name) as ConstructorType;
-            const core_args = this.args.zipWith((arg, field) => arg.read_back(context, bound, field), constr_type.fields);
-            return new C.Constructor(this.name, core_args);
+        if (type instanceof Datatype && type.name === this.type.name) {
+            const core_args = this.args.map(({ expr, type }) => ({ expr: expr.read_back(context, bound, type), type: type.read_back_type(context, bound) }));
+            const core_type = this.type.read_back_type(context, bound) as C.Datatype;
+            return new C.Constructor(this.name, core_args, core_type);
         } else {
             return super.read_back(context, bound, type);
         }
@@ -263,17 +266,19 @@ export class Constructor extends Value {
     }
 }
 
-export class ConstructorType {
+type Param = { name: Symbol, value: Value };
+
+export class ConstructorInfo {
     public constructor(
-        public fields: I.OrderedMap<Symbol, Value>,
-        public type: Symbol,
-        public parameters: I.List<Value>
+        public parameters: I.List<Param>,
+        public type: I.List<Value>
     ) { }
 
-    public read_back(parameter_types: I.List<Value>, context: Rho, bound: Bound): C.ConstructorType {
-        const core_fields = this.fields.map(field => field.read_back_type(context, bound));
-        const core_parameters = this.parameters.zipWith((param, type) => param.read_back(context, bound, type), parameter_types);
-        return new C.ConstructorType(core_fields, this.type, core_parameters);
+    public read_back(parameters: I.List<Value>, indices: I.List<Value>, context: Rho, bound: Bound): C.ConstructorInfo {
+        return new C.ConstructorInfo(
+            this.parameters.map(({ name, value }) => ({ name, value: value.read_back_type(context, bound) })),
+            this.type.zipWith((t, type) => t.read_back(context, bound, type), parameters.concat(indices))
+        );
     }
 }
 
@@ -282,17 +287,29 @@ export class Datatype extends Type {
 
     public constructor(
         public name: Symbol,
-        public constructors: I.OrderedMap<Symbol, ConstructorType>,
-        public parameters: I.List<Value>
+        public parameters: I.List<DatatypeParameter>,
+        public indices: I.List<DatatypeParameter>,
+        public constructors: I.Map<Symbol, ConstructorInfo>
     ) { super(); }
 
     public override read_back_type(context: Rho, bound: Bound): C.Core {
-        const constrs = this.constructors.map(type => type.read_back(this.parameters, context, bound));
-        const parameters = this.parameters.map(param => param.read_back_type(context, bound));
-        return new C.Datatype(this.name, constrs, parameters);
+        const parameters = Datatype.read_back_parameters(this.parameters, context, bound);
+        const indices = Datatype.read_back_parameters(this.indices, context, bound);
+        const constructors = this.constructors.map(c => c.read_back(
+            this.parameters.map(p => p.type),
+            this.indices.map(i => i.type),
+            context, bound));
+        return new C.Datatype(this.name, parameters, indices, constructors);
+    }
+
+    private static read_back_parameters(parameters: I.List<DatatypeParameter>, context: Rho, bound: Bound): I.List<C.DatatypeParameter> {
+        return parameters.map(({ expr, type }) => ({ expr: expr.read_back(context, bound, type), type: type.read_back_type(context, bound) }));
     }
 
     public override toString(): string {
-        return `(data ${this.name} ${this.constructors.join(" ")})`;
+        const parameters = this.parameters
+            .concat(this.indices)
+            .map(({ expr, type }) => `(the ${type.toString()} ${expr.toString()})`).join(" ");
+        return `(${this.name} ${parameters})`;
     }
 }
