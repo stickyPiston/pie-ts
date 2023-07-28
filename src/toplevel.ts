@@ -55,7 +55,7 @@ function to_expr_env(context: Context): E.Context {
  * Concrete class for (define ...) statement
  */
 export class Define implements TopLevel {
-    public constructor(public name: Symbol, public value: E.Expr) {}
+    public constructor(public name: Symbol, public value: E.Expr) { }
 
     /**
      * Check whether there is claim before this define and then check the definition's
@@ -75,7 +75,7 @@ export class Define implements TopLevel {
  * Declare a variables type using (claim ...)
  */
 export class Claim implements TopLevel {
-    public constructor(public name: Symbol, public type: E.Expr) {}
+    public constructor(public name: Symbol, public type: E.Expr) { }
 
     /**
      * Check whether the body is a type and then add it to the context
@@ -97,7 +97,7 @@ export class CheckSame implements TopLevel {
         public type: E.Expr,
         public left: E.Expr,
         public right: E.Expr,
-    ) {}
+    ) { }
 
     /**
      * Evaluate the type, check the two expressions against that type and then check the values
@@ -131,6 +131,9 @@ export class Constructor {
 
     /**
      * Create a core expression to introduce a constructor
+     * @param gamma the type checking environment of within the datatype
+     * @param datatype the parent datatype's core expression representation
+     * @returns a series of lambdas that lead to the construction of this constructor's core expression
      */
     public to_core(gamma: E.Context, datatype: C.Datatype): C.Core {
         const args = this.parameters.map(({ name, value }) => {
@@ -155,6 +158,13 @@ export class Constructor {
         return param_types.reduceRight((acc, { name, value }) => new C.Pi(name, value, acc), datatype);
     }
 
+    /**
+     * Create the associated constructor information in core expression context
+     * @param gamma the type checking environment of within the datatype
+     * @param parameters the datatype's type parameters
+     * @param indices the datatype's indices
+     * @returns a constructor information object
+     */
     public to_info(gamma: E.Context, parameters: I.List<V.Value>, indices: I.List<V.Value>): C.ConstructorInfo {
         return new C.ConstructorInfo(
             this.parameters.map(({ name, value }) => {
@@ -191,6 +201,12 @@ export class Data implements TopLevel {
             .reduceRight((acc, { name, value }) => new C.Pi(name, value, acc), new C.U());
     }
 
+    /**
+     * Create a core expression representation for this datatype
+     * @param gamma the type checking context of within the datatype
+     * @param rho the runtime context of within the datatype
+     * @returns this datatype's core expression representation
+     */
     private to_datatype(gamma: E.Context, rho: V.Rho): C.Datatype {
         const parameters = Data.eval_parameters(this.parameters, gamma),
               indices = Data.eval_parameters(this.indices, gamma);
@@ -215,18 +231,49 @@ export class Data implements TopLevel {
             .reduceRight((acc, { name }) => new C.Lambda(name, acc), body);
     }
 
+    /**
+     * Create core expression representations for a datatype's parameters or indices
+     * @param parameters the datatype's parameters or indices
+     * @param gamma the typing context of the datatype (not within)
+     * @returns the parameters' core expression representations
+     */
     private static eval_parameters(parameters: I.List<Param>, gamma: E.Context): I.List<C.DatatypeParameter> {
         return parameters.map(({ name, value }) => ({ expr: new C.Var(name), type: value.isType(gamma) }));
     }
 
+    /**
+     * Extend the typing context with the types for the datatype's parameters and indices
+     * @param gamma the typing context of the datatype
+     * @param rho the runtime context of the datatype
+     * @returns the typing context for within the datatype
+     */
     private create_constructor_gamma(gamma: E.Context, rho: V.Rho): E.Context {
-        return this.parameters.reduce((gamma, { name, value }) => gamma.push({ type: "HasType", name, value: value.isType(gamma).eval(rho) }), gamma);
+        return this.parameters
+            .concat(this.indices)
+            .reduce(
+                (gamma, { name, value }) => gamma.push({ type: "HasType", name, value: value.isType(gamma).eval(rho) }),
+                gamma
+            );
     }
 
+    /**
+     * Extend the runtime context with neutral values for the datatype's parameters and indices
+     * @param rho the runtime context of the datatype
+     * @returns the runtime context for within the datatype
+     */
     private create_constructor_rho(rho: V.Rho): V.Rho {
-        return this.parameters.reduce((rho, { name }) => rho.set(name, new V.U()), rho);
+        return this.parameters
+            .concat(this.indices)
+            .reduce((rho, { name }) => rho.set(name, new V.U()), rho);
     }
 
+    /**
+     * Prepend the automatically generated parameters for each constructor.
+     * These parameters are for now regular parameters that need values supplied explicitly when called,
+     * but once implicit parameters are implemented, these parameters will also be marked as implicit
+     * @param constructors the original list of constructors
+     * @returns the original list of constructor with the added constructor prepended
+     */
     private prepend_parameters_to_constructors(constructors: I.List<Constructor>): I.List<Constructor> {
         return constructors.map(constr => {
             const new_parameters = this.parameters.concat(constr.parameters);
