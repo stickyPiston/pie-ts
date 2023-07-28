@@ -238,9 +238,9 @@ export class Data implements TopLevel {
      * A datatype definition introduces the bindings for the type and for each of the constructors
      */
     public eval(context: Context): Context {
-        if (!this.constructors.every(constr => constr.type_name === this.name))
-            throw new Error("The constructors need to return an instance of the datatype");
-
+        // This check happens in eval because throwing errors in the constructor happen during parsing
+        // which is not wanted
+        this.check_parameter_consistency();
 
         const gamma = to_expr_env(context), rho = E.to_rho(gamma);
         const constr_gamma = this.create_constructor_gamma(gamma, rho),
@@ -248,12 +248,46 @@ export class Data implements TopLevel {
               
         const datatype = this.to_datatype(constr_gamma, constr_rho);
 
-        context = this.constructors
+        return this.constructors
             .reduce((env, constr) => env
                 .push({ type: "Claim",  name: constr.name, value: constr.to_type(constr_gamma, datatype).eval(constr_rho) })
                 .push({ type: "Define", name: constr.name, value: constr.to_core(constr_gamma, datatype).eval(constr_rho) }), context)
             .push({ type: "Claim",  name: this.name, value: this.to_type(gamma).eval(rho) })
             .push({ type: "Define", name: this.name, value: this.to_core(datatype).eval(rho) });
-        return context;
+    }
+
+    /**
+     * The parameters in the return types for every constructor should be the same parameters
+     * as the ones defined for the entire datatype. This function checks whether this is true
+     * by verifying that the same variables are used in the correct positions in the return types
+     * in the constructors and that the variables are not shadowed in their parameters.
+     */
+    private check_parameter_consistency(): void {
+        this.constructors.forEach(constr => {
+            // Check that the constructor includes the datatype's name
+            if (constr.type_name !== this.name)
+                throw new Error("The constructors need to return an instance of the datatype");
+        
+            const parameter_names = this.parameters.map(({ name }) => name);
+        
+            // Check that the first few parameters are the variables
+            const supposed_parameters = constr.type.slice(0, this.parameters.size);
+            supposed_parameters
+                .zip(this.parameters.map(({ name }) => name))
+                .forEach(([expr, name]) => {
+                    if (!(expr instanceof E.Var && expr.name === name)) {
+                        const parameters = parameter_names.join(", ");
+                        throw new Error(`Expected first ${supposed_parameters.size} parameters for constructor ${constr.name} to be ${parameters}`);
+                    }
+                });
+
+            // Check that the parameters are not shadowed over by the constructor
+            constr.parameters
+                .slice(this.parameters.size) // The first few parameters are prepended in Data's constructor
+                .forEach(({ name }) => {
+                    if (parameter_names.includes(name))
+                        throw new Error(`Shadowing the datatype's parameters is not allowed in constructor ${constr.name}'s parameter ${name}`);
+                });
+        });
     }
 }
