@@ -486,7 +486,11 @@ export class Datatype extends Core {
     }
 
     public override toString(): string {
-        return "";
+        const parameters = this.parameters
+            .concat(this.indices)
+            .map(param => param.expr.toString())
+            .join(" ");
+        return `(${this.name} ${parameters})`;
     }
 }
 
