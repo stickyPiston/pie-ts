@@ -1,8 +1,8 @@
 (data Either ((A U) (B U)) ()
-    (Left (A U) (B U) (x A) (Either A B))
-    (Right (A U) (B U) (x B) (Either A B)))
+    (left (x A) (Either A B))
+    (right (x B) (Either A B)))
 (check-same Atom
     'John
-    (match (Right Atom (Pair Atom Atom) (cons 'John 'Doe))
-        ((Left _ _ atom) atom)
-        ((Right _ _ (cons l r)) l)))
+    (match (right Atom (Pair Atom Atom) (cons 'John 'Doe))
+        ((left _ _ atom) atom)
+        ((right _ _ (cons l r)) l)))
