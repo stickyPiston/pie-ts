@@ -1,7 +1,7 @@
 { const { T, A, E, I } = this; }
 
 Program = statements: (Whitespace Statement)+ Whitespace? {
-    return statements.map(statement => statement[1]);
+    return I.List(statements).map(statement => statement[1]);
 }
 
 Statement = Define / Claim / CheckSame / Data 
@@ -18,9 +18,9 @@ CheckSame = "(check-same" Whitespace type: Expression Whitespace left: Expressio
     return new T.CheckSame(type, left, right);
 }
 
-Parameters = "(" ")" { return []; }
+Parameters = "(" ")" { return I.List(); }
            / "(" head: Binder tail: (Whitespace Binder)* ")" {
-    return [head, ...tail.map(binder => binder[1])];
+    return I.List([head, ...tail.map(binder => binder[1])]);
 }
 
 Data = "(data"
@@ -29,7 +29,7 @@ Data = "(data"
        Whitespace indices: Parameters
        constructors: (Whitespace Constructor)* ")" {
     const parsed_constructors = constructors.map(constr => constr[1]);
-    return new T.Data(name, I.List(parameters), I.List(indices), I.List(parsed_constructors));
+    return new T.Data(name, parameters, indices, I.List(parsed_constructors));
 }
 
 Constructor = "(" name: Symbol parameters: (Whitespace Binder)* Whitespace "(" ret_type_name: Symbol ret_type_args: (Whitespace Expression)+ ")" ")" {
@@ -55,12 +55,12 @@ Binder = "(" name: Symbol Whitespace value: Expression ")" {
 
 Pi = "(" ("Pi" / "Π") Whitespace "(" head: Binder tail: (Whitespace Binder)* ")" Whitespace body: Expression ")" {
     const params = [head, ...tail.map(param => param[1])];
-    return new E.Pi(params, body);
+    return new E.Pi(I.List(params), body);
 }
 
 Sigma = "(" ("Sigma" / "Σ") "(" head: Binder tail: (Whitespace Binder)* ")" Whitespace body: Expression ")" {
     const params = [head, ...tail.map(param => param[1])];
-    return new E.Sigma(params, body);
+    return new E.Sigma(I.List(params), body);
 }
 
 Atom = "Atom" { return new E.Atom(); }
@@ -72,11 +72,11 @@ Pair = "(Pair" Whitespace left: Expression Whitespace right: Expression ")" {
 U = "U" { return new E.U(); }
 
 Arrow = "(" ("->" / "→") Whitespace head: Expression tail: (Whitespace Expression)+ ")" {
-    return new E.Arrow([head, ...tail.map(expr => expr[1])]);
+    return new E.Arrow(I.List([head, ...tail.map(expr => expr[1])]));
 }
 
 Lambda = "(" ("lambda" / "λ") "(" head: Symbol tail: (Whitespace Symbol)* ")" Whitespace body: Expression ")" {
-    return new E.Lambda([head, ...tail.map(param => param[1])], body);
+    return new E.Lambda(I.List([head, ...tail.map(param => param[1])]), body);
 }
 
 Cons = "(cons" Whitespace left: Expression Whitespace right: Expression ")" {
@@ -100,7 +100,7 @@ Car = "(car" Whitespace pair: Expression ")" {
 }
 
 Appl = "(" func: Expression args: (Whitespace Expression)+ ")" {
-    return new E.Appl(func, args.map(arg => arg[1]));
+    return new E.Appl(func, I.List(args.map(arg => arg[1])));
 }
 
 Pattern = Hole / VarPat / SigmaPat / DatatypePat / TickPat

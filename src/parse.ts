@@ -7,7 +7,7 @@ import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 const grammar = await Deno.readTextFile("src/grammar.pegjs");
 const parser = peg.generate(grammar);
 
-export function parse(source: string): T.TopLevel[] {
+export function parse(source: string): I.List<T.TopLevel> {
     const dependencies = { E, A, T, I };
     return parser.parse.call(dependencies, source);
 }

@@ -300,7 +300,7 @@ export class Sigma extends Expr {
      * @param base the right-most term which cannot be depended on
      */
     public constructor(
-        public params: { name: Symbol; value: Expr }[],
+        public params: I.List<{ name: Symbol; value: Expr }>,
         public base: Expr,
     ) { super(); }
 
@@ -314,14 +314,14 @@ export class Sigma extends Expr {
      * recursion to compile and type check the inner Sigma types
      */
     public override isType(context: Context): C.Core {
-        const [A, ...rest] = this.params;
+        const A = this.params.first()!, rest = this.params.shift();
         const core_A = A.value.isType(context);
         const new_gamma = push_local(
             A.name,
             run_eval(core_A, context),
             context,
         );
-        if (rest.length) {
+        if (rest.size) {
             const smaller = new Sigma(rest, this.base);
             const core_smaller = smaller.isType(new_gamma);
             return new C.Sigma(A.name, core_A, core_smaller);
@@ -420,7 +420,7 @@ export class Arrow extends Expr {
     /**
      * @param args the parameters and return type of the function
      */
-    public constructor(public args: Expr[]) { super(); }
+    public constructor(public args: I.List<Expr>) { super(); }
 
     /**
      * Check whether an arrow is a type involves checking whether the first element
@@ -428,11 +428,11 @@ export class Arrow extends Expr {
      * of the n-ary operators 
      */
     public override isType(context: Context): C.Core {
-        const [from, to, ...rest] = this.args;
+        const from = this.args.first()!, to = this.args.get(1), rest = this.args.skip(2);
         const core_from = from.isType(context);
         const fresh_x = fresh(context, "x");
-        if (rest.length) {
-            const smaller = new Arrow([to, ...rest]);
+        if (to && rest.size) {
+            const smaller = new Arrow(rest.insert(0, to));
             const new_gamma = push_local(
                 fresh_x,
                 run_eval(core_from, context),
@@ -452,22 +452,24 @@ export class Arrow extends Expr {
      * An arrow expression is compiled to (nested) Pi core expressions with fresh unused names
      */
     public override synth(context: Context): SynthResult {
-        const [from, to, ...rest] = this.args;
+        const from = this.args.first()!, to = this.args.get(1), rest = this.args.skip(2);
         const core_X = from.check(context, new V.U());
         const var_x = fresh(context, "x");
         const new_gamma = push_local(var_x, run_eval(core_X, context), context);
-        if (rest.length) {
+        if (rest.size) {
             const core_R = new Arrow(rest).check(new_gamma, new V.U());
             return {
                 type: new V.U(),
                 expr: new C.Pi(var_x, core_X, core_R),
             };
-        } else {
+        } else if (to) {
             const core_R = to.check(new_gamma, new V.U());
             return {
                 type: new V.U(),
                 expr: new C.Pi(var_x, core_X, core_R),
             };
+        } else {
+            throw new Error("Expected at least two arguments to ->");
         }
     }
 }
@@ -484,19 +486,19 @@ export class Pi extends Expr {
      * @param base the return type of the function
      */
     public constructor(
-        public params: { name: Symbol; value: Expr }[],
+        public params: I.List<{ name: Symbol; value: Expr }>,
         public base: Expr,
     ) { super(); }
 
     public override isType(context: Context): C.Core {
-        const [arg, ...rest] = this.params;
+        const arg = this.params.first()!, rest = this.params.shift();
         const core_arg = arg.value.isType(context);
         const new_gamma = push_local(
             arg.name,
             run_eval(core_arg, context),
             context,
         );
-        if (rest.length) {
+        if (rest.size) {
             const smaller = new Pi(rest, this.base);
             const core_smaller = smaller.isType(new_gamma);
             return new C.Pi(arg.name, core_arg, core_smaller);
@@ -507,14 +509,14 @@ export class Pi extends Expr {
     }
 
     public override synth(context: Context): SynthResult {
-        const [param, ...rest] = this.params;
+        const param = this.params.first()!, rest = this.params.shift();
         const core_X = param.value.check(context, new V.U());
         const new_gamma = push_local(
             param.name,
             run_eval(core_X, context),
             context,
         );
-        if (rest.length) {
+        if (rest.size) {
             const core_R = new Pi(rest, this.base).check(new_gamma, new V.U());
             return {
                 type: new V.U(),
@@ -541,7 +543,7 @@ export class Lambda extends Expr {
      * @param body the body of the lambda
      */
     public constructor(
-        public params: Symbol[],
+        public params: I.List<Symbol>,
         public body: Expr
     ) { super(); }
 
@@ -553,13 +555,13 @@ export class Lambda extends Expr {
     public override check(context: Context, against: V.Value): C.Core {
         if (against instanceof V.Pi) {
             const { value, body } = against;
-            const [param, ...rest] = this.params;
+            const param = this.params.first()!, rest = this.params.shift();
             const new_gamma = push_local(param, value, context);
             const new_against = body.instantiate(
                 against.name,
                 new V.Neutral(value, new N.Var(param)),
             );
-            if (rest.length) {
+            if (rest.size) {
                 const smaller = new Lambda(rest, this.body);
                 const core_smaller = smaller.check(new_gamma, new_against);
                 return new C.Lambda(param, core_smaller);
@@ -587,7 +589,7 @@ export class Appl extends Expr {
      */
     public constructor(
         public func: Expr,
-        public args: Expr[]
+        public args: I.List<Expr>
     ) { super(); }
 
     /**
@@ -595,15 +597,15 @@ export class Appl extends Expr {
      * and check whether the operand is of the type of the operator's parameter type
      */
     public override synth(context: Context): SynthResult {
-        if (this.args.length > 1) {
-            const args = this.args.slice(0, this.args.length - 1);
+        if (this.args.size > 1) {
+            const args = this.args.skipLast(1);
             const appl = new Appl(this.func, args);
             const { type, expr: core_appl } = appl.synth(context) as {
                 type: V.Pi,
                 expr: C.Core
             };
 
-            const arg = this.args[this.args.length - 1];
+            const arg = this.args.last()!;
             const core_arg = arg.check(context, type.value);
 
             return {
@@ -614,7 +616,7 @@ export class Appl extends Expr {
                 expr: new C.Appl(core_appl, core_arg),
             };
         } else {
-            const arg = this.args[0];
+            const arg = this.args.first()!;
             const { type, expr: core_func } = this.func.synth(context);
             if (type instanceof V.Pi) {
                 const core_arg = arg.check(context, type.value);
@@ -626,9 +628,6 @@ export class Appl extends Expr {
                     ),
                     expr: new C.Appl(core_func, core_arg),
                 };
-            } else if (type instanceof V.Datatype) {
-                // TODO
-                throw new Error("");
             } else {
                 throw new Error("Can only apply to function types");
             }
