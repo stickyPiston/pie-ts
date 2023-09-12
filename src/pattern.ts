@@ -1,10 +1,9 @@
-import * as E from "./expr.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as V from "./value.ts";
-import * as C from "./core.ts";
 import * as N from "./neutral.ts";
+import * as O from "./context.ts";
 
-type Symbol = string;
+type Symbol = O.Symbol;
 
 /**
  * Patterns are used in match arms to describe the possible structure of a value
@@ -21,21 +20,21 @@ export abstract class Pattern {
      * @param context the context of the match expression
      * @param type the type of the target of the (sub)pattern
      */
-    public abstract extend_context(context: E.Context, type: V.Value): E.Context;
+    public abstract extend_context(context: O.Gamma, type: V.Value): O.Gamma;
 
     /**
      * Extend the runtime context with the binders in the pattern associated with the matched target
      * @param context the runtime context of the match expression
      * @param value the value of the target
      */
-    public abstract extend_rho(context: V.Rho, value: V.Value): V.Rho;
+    public abstract extend_rho(context: O.Rho, value: V.Value): O.Rho;
 
     /**
      * Extend the alpha equivalence context with the binders in the pattern
      * @param context the renamings of the match expression
      * @param other the other pattern
      */
-    public abstract extend_renamings(context: C.Renamings, other: Pattern): C.Renamings;
+    public abstract extend_renamings(context: O.Renamings, other: Pattern): O.Renamings;
 
     /**
      * Check whether two patterns are structurally the same
@@ -87,15 +86,15 @@ export class Hole extends Pattern {
         return true;
     }
 
-    public override extend_context(context: E.Context): E.Context {
+    public override extend_context(context: O.Gamma): O.Gamma {
         return context;
     }
 
-    public override extend_rho(context: V.Rho, _value: V.Value): V.Rho {
+    public override extend_rho(context: O.Rho, _value: V.Value): O.Rho {
         return context;
     }
 
-    public override extend_renamings(context: C.Renamings, _other: Hole): C.Renamings {
+    public override extend_renamings(context: O.Renamings, _other: Hole): O.Renamings {
         return context;
     }
 
@@ -121,15 +120,15 @@ export class Var extends Pattern {
         return true;
     }
 
-    public override extend_context(context: E.Context, type: V.Value): E.Context {
-        return context.push({ type: "HasType", name: this.name, value: type });
+    public override extend_context(context: O.Gamma, type: V.Value): O.Gamma {
+        return context.set(this.name, type);
     }
 
-    public override extend_rho(context: V.Rho, value: V.Value): V.Rho {
+    public override extend_rho(context: O.Rho, value: V.Value): O.Rho {
         return context.set(this.name, value);
     }
 
-    public override extend_renamings(context: C.Renamings, other: Var): C.Renamings {
+    public override extend_renamings(context: O.Renamings, other: Var): O.Renamings {
         return context.add(this.name, other.name);
     }
 
@@ -159,12 +158,10 @@ export class Datatype extends Pattern {
             && this.binders.zip(against.args).every(([binder, arg]) => binder.admits(arg.expr));
     }
 
-    public override extend_context(context: E.Context, type: V.Value): E.Context {
+    public override extend_context(context: O.Gamma, type: V.Value): O.Gamma {
         if (type instanceof V.Datatype) {
             const info = type.constructors.get(this.constr)!;
-            const new_context = this.name
-                ? context.push({ type: "HasType", name: this.name, value: type })
-                : context;
+            const new_context = this.name ? context.set(this.name, type) : context;
 
             const new_binders = this.binders.zip(info.parameters.map(({ value }) => value));
             return new_binders.reduce((context, [pattern, type]) => pattern.extend_context(context, type), new_context);
@@ -173,7 +170,7 @@ export class Datatype extends Pattern {
         }
     }
 
-    public override extend_rho(context: V.Rho, value: V.Value): V.Rho {
+    public override extend_rho(context: O.Rho, value: V.Value): O.Rho {
         if (value instanceof V.Constructor) {
             const new_context = this.name ? context.set(this.name, value) : context;
             return this.binders
@@ -184,7 +181,7 @@ export class Datatype extends Pattern {
         }
     }
 
-    public override extend_renamings(context: C.Renamings, other: Datatype): C.Renamings {
+    public override extend_renamings(context: O.Renamings, other: Datatype): O.Renamings {
         const new_context = this.name && other.name ? context.add(this.name, other.name) : context;
         return this.binders
             .zip(other.binders)
@@ -217,15 +214,15 @@ export class Atom extends Pattern {
         return against instanceof V.Tick && against.name === this.name;
     }
 
-    public override extend_context(context: E.Context, _type: V.Value): E.Context {
+    public override extend_context(context: O.Gamma, _type: V.Value): O.Gamma {
         return context
     }
 
-    public override extend_rho(context: V.Rho, _value: V.Value): V.Rho {
+    public override extend_rho(context: O.Rho, _value: V.Value): O.Rho {
         return context;
     }
 
-    public override extend_renamings(context: C.Renamings, _other: Pattern): C.Renamings {
+    public override extend_renamings(context: O.Renamings, _other: Pattern): O.Renamings {
         return context;
     }
 
@@ -254,7 +251,7 @@ export class Sigma extends Pattern {
             && this.right.admits(against.snd);
     }
 
-    public override extend_context(context: E.Context, type: V.Value): E.Context {
+    public override extend_context(context: O.Gamma, type: V.Value): O.Gamma {
         if (type instanceof V.Sigma) {
             const context_left = this.left.extend_context(context, type.value);
             return this.right.extend_context(context_left, type.body.instantiate(type.name, new V.Neutral(type.value, new N.Var(type.name))));
@@ -263,7 +260,7 @@ export class Sigma extends Pattern {
         }
     }
 
-    public override extend_rho(context: V.Rho, value: V.Value): V.Rho {
+    public override extend_rho(context: O.Rho, value: V.Value): O.Rho {
         if (value instanceof V.Cons) {
             const new_context = this.left.extend_rho(context, value.fst);
             return this.right.extend_rho(new_context, value.snd);
@@ -272,7 +269,7 @@ export class Sigma extends Pattern {
         }
     }
 
-    public override extend_renamings(context: C.Renamings, other: Sigma): C.Renamings {
+    public override extend_renamings(context: O.Renamings, other: Sigma): O.Renamings {
         const new_context = this.left.extend_renamings(context, other.left);
         return this.right.extend_renamings(new_context, other.right);
     }

@@ -1,13 +1,14 @@
 import * as C from "./core.ts";
 import * as N from "./neutral.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
+import * as O from "./context.ts";
 
-type Symbol = string;
-export type Bound = I.List<Symbol>;
-export type Rho = I.Map<Symbol, Value>;
+type Symbol = O.Symbol;
+// export type Bound = I.List<Symbol>;
+// export type Rho = I.Map<Symbol, Value>;
 
 export class Closure {
-    public constructor(public context: Rho, public body: C.Core) { }
+    public constructor(public context: O.Rho, public body: C.Core) { }
     public instantiate(name: Symbol, value: Value): Value {
         return this.body.eval(this.context.set(name, value));
     }
@@ -17,37 +18,27 @@ export class Closure {
     }
 }
 
-export function fresh(names: Bound, x: Symbol): Symbol {
-    let name = x;
-    while (names.contains(name)) {
-        name += "_";
-    }
-    return name;
-}
-
 export abstract class Value {
     public abstract description: string;
 
-    public read_back(_context: Rho, _bound: Bound, type: Value): C.Core {
-        throw new Error(
-            `Could not read back normal form ${this.description} : ${type.description}`,
-        );
+    public read_back(_context: O.Rho, _bound: O.Bound, type: Value): C.Core {
+        throw new Error(`Could not read back normal form ${this.description} : ${type.description}`);
     }
 
-    public read_back_type(_context: Rho, _bound: Bound): C.Core {
+    public read_back_type(_context: O.Rho, _bound: O.Bound): C.Core {
         throw new Error(`Could not read back type ${this.description}`);
     }
 
-    public same_type(context: Rho, bound: Bound, other: Value): void {
+    public same_type(context: O.Rho, bound: O.Bound, other: Value): void {
         const core_self = this.read_back_type(context, bound);
         const core_other = other.read_back_type(context, bound);
-        core_self.alpha_equiv(core_other, new C.Renamings);
+        core_self.alpha_equiv(core_other, new O.Renamings);
     }
 
-    public same_value(context: Rho, bound: Bound, type: Value, other: Value): void {
+    public same_value(context: O.Rho, bound: O.Bound, type: Value, other: Value): void {
         const core_self = this.read_back(context, bound, type);
         const core_other = other.read_back(context, bound, type);
-        core_self.alpha_equiv(core_other, new C.Renamings);
+        core_self.alpha_equiv(core_other, new O.Renamings);
     }
 
     abstract toString(): string;
@@ -57,8 +48,8 @@ export abstract class Value {
 
 export abstract class Type extends Value {
     public override read_back(
-        context: Rho,
-        bound: Bound,
+        context: O.Rho,
+        bound: O.Bound,
         _type: Value,
     ): C.Core {
         return this.read_back_type(context, bound);
@@ -97,14 +88,14 @@ export class Sigma extends Type {
         super();
     }
 
-    public override read_back_type(context: Rho, bound: Bound): C.Core {
-        const y = fresh(bound, this.name);
+    public override read_back_type(context: O.Rho, bound: O.Bound): C.Core {
+        const y = bound.fresh(this.name);
         const value = new Neutral(this.value, new N.Var(y));
         const dV = this.body.instantiate(this.name, value);
         return new C.Sigma(
             y,
             this.value.read_back_type(context, bound),
-            dV.read_back_type(context, bound.push(y)),
+            dV.read_back_type(context, bound.set(y)),
         );
     }
 
@@ -123,14 +114,14 @@ export class Pi extends Type {
         super();
     }
 
-    public override read_back_type(context: Rho, bound: Bound): C.Core {
-        const y = fresh(bound, this.name);
+    public override read_back_type(context: O.Rho, bound: O.Bound): C.Core {
+        const y = bound.fresh(this.name);
         const value = new Neutral(this.value, new N.Var(y));
         const dV = this.body.instantiate(this.name, value);
         return new C.Pi(
             y,
             this.value.read_back_type(context, bound),
-            dV.read_back_type(context, bound.push(y)),
+            dV.read_back_type(context, bound.set(y)),
         );
     }
 
@@ -146,7 +137,7 @@ export class Cons extends Value {
     public constructor(public fst: Value, public snd: Value) {
         super();
     }
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
+    public override read_back(context: O.Rho, bound: O.Bound, type: Value): C.Core {
         if (type instanceof Sigma) {
             const core_fst = this.fst.read_back(context, bound, type.value);
             const snd_type = type.body.instantiate(type.name, this.snd);
@@ -168,13 +159,13 @@ export class Lambda extends Value {
         super();
     }
 
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
+    public override read_back(context: O.Rho, bound: O.Bound, type: Value): C.Core {
         if (type instanceof Pi) {
-            const y = fresh(bound, this.name);
+            const y = bound.fresh(this.name);
             const value = new Neutral(type.value, new N.Var(y));
             const value_body = type.body.instantiate(type.name, value);
             const core_body = apply_many(this, value)
-                .read_back(context, bound.push(y), value_body);
+                .read_back(context, bound.set(y), value_body);
             return new C.Lambda(y, core_body);
         } else {
             return super.read_back(context, bound, type);
@@ -202,7 +193,7 @@ export class Tick extends Value {
         super();
     }
 
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
+    public override read_back(context: O.Rho, bound: O.Bound, type: Value): C.Core {
         if (type instanceof Atom) {
             return new C.Tick(this.name);
         } else {
@@ -221,7 +212,7 @@ export class Neutral extends Value {
         super();
     }
 
-    public read_back_type(context: Rho, bound: Bound): C.Core {
+    public read_back_type(context: O.Rho, bound: O.Bound): C.Core {
         if (this.type instanceof U) {
             return this.neutral.read_back(context);
         } else {
@@ -229,7 +220,7 @@ export class Neutral extends Value {
         }
     }
 
-    public read_back(context: Rho, _bound: Bound): C.Core {
+    public read_back(context: O.Rho, _bound: O.Bound): C.Core {
         return this.neutral.read_back(context);
     }
 
@@ -251,7 +242,7 @@ export class Constructor extends Value {
         public type: Datatype
     ) { super(); }
 
-    public override read_back(context: Rho, bound: Bound, type: Value): C.Core {
+    public override read_back(context: O.Rho, bound: O.Bound, type: Value): C.Core {
         if (type instanceof Datatype && type.name === this.type.name) {
             const core_args = this.args.map(({ expr, type }) => ({ expr: expr.read_back(context, bound, type), type: type.read_back_type(context, bound) }));
             const core_type = this.type.read_back_type(context, bound) as C.Datatype;
@@ -274,7 +265,7 @@ export class ConstructorInfo {
         public type: I.List<Value>
     ) { }
 
-    public read_back(parameters: I.List<Value>, indices: I.List<Value>, context: Rho, bound: Bound): C.ConstructorInfo {
+    public read_back(parameters: I.List<Value>, indices: I.List<Value>, context: O.Rho, bound: O.Bound): C.ConstructorInfo {
         return new C.ConstructorInfo(
             this.parameters.map(({ name, value }) => ({ name, value: value.read_back_type(context, bound) })),
             this.type.zipWith((t, type) => t.read_back(context, bound, type), parameters.concat(indices))
@@ -292,7 +283,7 @@ export class Datatype extends Type {
         public constructors: I.Map<Symbol, ConstructorInfo>
     ) { super(); }
 
-    public override read_back_type(context: Rho, bound: Bound): C.Core {
+    public override read_back_type(context: O.Rho, bound: O.Bound): C.Core {
         const parameters = Datatype.read_back_parameters(this.parameters, context, bound);
         const indices = Datatype.read_back_parameters(this.indices, context, bound);
         const constructors = this.constructors.map(c => c.read_back(
@@ -302,7 +293,7 @@ export class Datatype extends Type {
         return new C.Datatype(this.name, parameters, indices, constructors);
     }
 
-    private static read_back_parameters(parameters: I.List<DatatypeParameter>, context: Rho, bound: Bound): I.List<C.DatatypeParameter> {
+    private static read_back_parameters(parameters: I.List<DatatypeParameter>, context: O.Rho, bound: O.Bound): I.List<C.DatatypeParameter> {
         return parameters.map(({ expr, type }) => ({ expr: expr.read_back(context, bound, type), type: type.read_back_type(context, bound) }));
     }
 

@@ -2,19 +2,20 @@ import * as E from "./expr.ts";
 import * as C from "./core.ts";
 import * as V from "./value.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
+import * as O from "./context.ts";
 
-type Symbol = string;
+type Symbol = O.Symbol;
 
 /**
  * A top level context entry is either a define or a claim
  */
-type TopLevelEntry = { name: Symbol; type: "Claim" | "Define"; value: V.Value };
+// type TopLevelEntry = { name: Symbol; type: "Claim" | "Define"; value: V.Value };
 
 /**
  * Since variables need to be claimed and defined we need to store the entries in a list
  * rather than a map
  */
-export type Context = I.List<TopLevelEntry>;
+// export type Context = I.List<TopLevelEntry>;
 
 /**
  * Abstract class for top-level constructs
@@ -24,31 +25,7 @@ export interface TopLevel {
      * Evaluate a top-level statement given some context returning the updated context
      * @param gamma the top-level context so far
      */
-    eval(gamma: Context): Context;
-}
-
-/**
- * Convert a toplevel context into an expression context
- * @param context the toplevel context
- * @returns the expression context
- */
-function to_expr_env(context: Context): E.Context {
-    return context.map<E.ContextEntry>(({ name, type, value }) => {
-        if (type === "Claim") {
-            return { name, type: "Claim", value };
-        } else {
-            const claim = context.find((x) => x.name === name && x.type === "Claim");
-            if (claim) {
-                return {
-                    name,
-                    type: "Define",
-                    value: { value, type: claim.value },
-                };
-            } else {
-                throw new Error(`Missing claim for define for ${name}`);
-            }
-        }
-    });
+    eval(gamma: O.Sigma): O.Sigma;
 }
 
 /**
@@ -62,12 +39,12 @@ export class Define implements TopLevel {
      * body against the claimed type to obtain a core expression which can be evaluated and
      * put into the new context
      */
-    public eval(gamma: Context): Context {
-        const claim = gamma.find((e) => e.name === this.name && e.type === "Claim");
-        const expr_env = to_expr_env(gamma);
-        const core = this.value.check(expr_env, claim!.value);
-        const value = core.eval(E.to_rho(expr_env));
-        return gamma.push({ name: this.name, type: "Define", value });
+    public eval(sigma: O.Sigma): O.Sigma {
+        const claim = sigma.get_all(this.name).findLast(e => e instanceof O.Claim) as O.Claim | undefined;
+        const gamma = sigma.to_gamma();
+        const core = this.value.check(gamma, claim!.type);
+        const value = core.eval(gamma.to_rho());
+        return sigma.set(new O.Define(this.name, value));
     }
 }
 
@@ -80,11 +57,11 @@ export class Claim implements TopLevel {
     /**
      * Check whether the body is a type and then add it to the context
      */
-    public eval(gamma: Context): Context {
-        const expr_env = to_expr_env(gamma);
-        const core = this.type.isType(expr_env);
-        const value = core.eval(E.to_rho(expr_env));
-        return gamma.push({ name: this.name, type: "Claim", value });
+    public eval(sigma: O.Sigma): O.Sigma {
+        const gamma = sigma.to_gamma();
+        const core = this.type.isType(gamma);
+        const value = core.eval(gamma.to_rho());
+        return sigma.set(new O.Claim(this.name, value));
     }
 }
 
@@ -102,17 +79,15 @@ export class CheckSame implements TopLevel {
     /**
      * Evaluate the type, check the two expressions against that type and then check the values
      */
-    public eval(gamma: Context): Context {
-        const expr_env = to_expr_env(gamma);
-        const rho = E.to_rho(expr_env);
-        const type_value = this.type.isType(expr_env).eval(rho);
-        const left_value = this.left.check(expr_env, type_value).eval(rho);
-        const right_value = this.right.check(expr_env, type_value).eval(rho);
+    public eval(sigma: O.Sigma): O.Sigma {
+        const gamma = sigma.to_gamma(), rho = gamma.to_rho(), bound = rho.to_bound();
+        const type_value = this.type.isType(gamma).eval(rho);
+        const left_value = this.left.check(gamma, type_value).eval(rho);
+        const right_value = this.right.check(gamma, type_value).eval(rho);
 
-        const bound = C.to_bound(rho);
         left_value.same_value(rho, bound, type_value, right_value);
 
-        return gamma;
+        return sigma;
     }
 }
 
@@ -135,9 +110,9 @@ export class Constructor {
      * @param datatype the parent datatype's core expression representation
      * @returns a series of lambdas that lead to the construction of this constructor's core expression
      */
-    public to_core(gamma: E.Context, datatype: C.Datatype): C.Core {
+    public to_core(gamma: O.Gamma, datatype: C.Datatype): C.Core {
         const args = this.parameters.map(({ name, value }) => {
-            gamma = gamma.push({ type: "HasType", name, value: new V.U() });
+            gamma = gamma.set(name, new V.U());
             return { expr: new C.Var(name), type: value.isType(gamma) };
         });
         const constr: C.Core = new C.Constructor(this.name, args, datatype);
@@ -150,9 +125,9 @@ export class Constructor {
      * @param datatype the core expression representing the parent datatype
      * @returns the core expression representing the the result of Constructor.to_core()
      */
-    public to_type(gamma: E.Context, datatype: C.Core): C.Core {
+    public to_type(gamma: O.Gamma, datatype: C.Core): C.Core {
         const param_types = this.parameters.map(({ name, value }) => {
-            gamma = gamma.push({ type: "HasType", name, value: new V.U() });
+            gamma = gamma.set(name, new V.U());
             return { name, value: value.isType(gamma) };
         });
         return param_types.reduceRight((acc, { name, value }) => new C.Pi(name, value, acc), datatype);
@@ -165,10 +140,10 @@ export class Constructor {
      * @param indices the datatype's indices
      * @returns a constructor information object
      */
-    public to_info(gamma: E.Context, parameters: I.List<V.Value>, indices: I.List<V.Value>): C.ConstructorInfo {
+    public to_info(gamma: O.Gamma, parameters: I.List<V.Value>, indices: I.List<V.Value>): C.ConstructorInfo {
         return new C.ConstructorInfo(
             this.parameters.map(({ name, value }) => {
-                gamma = gamma.push({ type: "HasType", name, value: new V.U() });
+                gamma = gamma.set(name, new V.U());
                 return { name, value: value.isType(gamma) };
             }),
             this.type.zipWith((t, type) => t.check(gamma, type), parameters.concat(indices))
@@ -194,7 +169,7 @@ export class Data implements TopLevel {
      * @param gamma the top level context of the data statement
      * @returns the pi expressions that represent the function creating this datatype
      */
-    private to_type(gamma: E.Context): C.Core {
+    private to_type(gamma: O.Gamma): C.Core {
         return this.parameters
             .concat(this.indices)
             .map(({ name, value }) => ({ name, value: value.isType(gamma) }))
@@ -207,7 +182,7 @@ export class Data implements TopLevel {
      * @param rho the runtime context of within the datatype
      * @returns this datatype's core expression representation
      */
-    private to_datatype(gamma: E.Context, rho: V.Rho): C.Datatype {
+    private to_datatype(gamma: O.Gamma, rho: O.Rho): C.Datatype {
         const parameters = Data.eval_parameters(this.parameters, gamma),
               indices = Data.eval_parameters(this.indices, gamma);
         const constructors = this.constructors.toMap().mapEntries(([_, c]) => [
@@ -237,7 +212,7 @@ export class Data implements TopLevel {
      * @param gamma the typing context of the datatype (not within)
      * @returns the parameters' core expression representations
      */
-    private static eval_parameters(parameters: I.List<Param>, gamma: E.Context): I.List<C.DatatypeParameter> {
+    private static eval_parameters(parameters: I.List<Param>, gamma: O.Gamma): I.List<C.DatatypeParameter> {
         return parameters.map(({ name, value }) => ({ expr: new C.Var(name), type: value.isType(gamma) }));
     }
 
@@ -247,11 +222,11 @@ export class Data implements TopLevel {
      * @param rho the runtime context of the datatype
      * @returns the typing context for within the datatype
      */
-    private create_constructor_gamma(gamma: E.Context, rho: V.Rho): E.Context {
+    private create_constructor_gamma(gamma: O.Gamma, rho: O.Rho): O.Gamma {
         return this.parameters
             .concat(this.indices)
             .reduce(
-                (gamma, { name, value }) => gamma.push({ type: "HasType", name, value: value.isType(gamma).eval(rho) }),
+                (gamma, { name, value }) => gamma.set(name, value.isType(gamma).eval(rho)),
                 gamma
             );
     }
@@ -261,7 +236,7 @@ export class Data implements TopLevel {
      * @param rho the runtime context of the datatype
      * @returns the runtime context for within the datatype
      */
-    private create_constructor_rho(rho: V.Rho): V.Rho {
+    private create_constructor_rho(rho: O.Rho): O.Rho {
         return this.parameters
             .concat(this.indices)
             .reduce((rho, { name }) => rho.set(name, new V.U()), rho);
@@ -284,12 +259,12 @@ export class Data implements TopLevel {
     /**
      * A datatype definition introduces the bindings for the type and for each of the constructors
      */
-    public eval(context: Context): Context {
+    public eval(sigma: O.Sigma): O.Sigma {
         // This check happens in eval because throwing errors in the constructor happen during parsing
         // which is not wanted
         this.check_parameter_consistency();
 
-        const gamma = to_expr_env(context), rho = E.to_rho(gamma);
+        const gamma = sigma.to_gamma(), rho = gamma.to_rho();
         const constr_gamma = this.create_constructor_gamma(gamma, rho),
               constr_rho = this.create_constructor_rho(rho);
               
@@ -297,10 +272,10 @@ export class Data implements TopLevel {
 
         return this.constructors
             .reduce((env, constr) => env
-                .push({ type: "Claim",  name: constr.name, value: constr.to_type(constr_gamma, datatype).eval(constr_rho) })
-                .push({ type: "Define", name: constr.name, value: constr.to_core(constr_gamma, datatype).eval(constr_rho) }), context)
-            .push({ type: "Claim",  name: this.name, value: this.to_type(gamma).eval(rho) })
-            .push({ type: "Define", name: this.name, value: this.to_core(datatype).eval(rho) });
+                .set(new O.Claim(constr.name, constr.to_type(constr_gamma, datatype).eval(constr_rho)))
+                .set(new O.Define(constr.name, constr.to_core(constr_gamma, datatype).eval(constr_rho))), sigma)
+            .set(new O.Claim(this.name, this.to_type(gamma).eval(rho)))
+            .set(new O.Define(this.name, this.to_core(datatype).eval(rho)));
     }
 
     /**

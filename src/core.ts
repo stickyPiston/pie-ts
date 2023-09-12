@@ -2,47 +2,9 @@ import * as V from "./value.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as N from "./neutral.ts";
 import * as A from "./pattern.ts";
+import * as O from "./context.ts";
 
-type Symbol = string;
-
-/**
- * A renaming map maps variable names to unique indices
- */
-type Renaming = I.Map<Symbol, number>;
-
-/**
- * Renamings class contains renaming maps for 2 core expressions at the same time.
- * Two variables are the same when the indices in both maps are the same
- */
-export class Renamings {
-    private left = I.Map() as Renaming;
-    private right = I.Map() as Renaming;
-    private next = 0;
-
-    /**
-     * Add two symbols to the renaming maps
-     * @param x the left variable
-     * @param y the right variable
-     * @returns an updated version of this class
-     */
-    public add(x: Symbol, y: Symbol): Renamings {
-        const renamings = new Renamings();
-        renamings.left = this.left.set(x, this.next);
-        renamings.right = this.right.set(y, this.next);
-        renamings.next = this.next + 1;
-        return renamings;
-    }
-
-    /**
-     * Check whether two variables point to the same α-normalised variable
-     * @param x the left variable
-     * @param y the right variable
-     * @returns true when they are the same, false otherwise
-     */
-    public check(x: Symbol, y: Symbol): boolean {
-        return this.left.get(x) === this.right.get(y);
-    }
-}
+type Symbol = O.Symbol;
 
 /**
  * Abstract class for core expressions, which is the language for well-typed Pie expressions
@@ -53,7 +15,7 @@ export abstract class Core {
      * @param _rho the context 
      * @throws when the expression does not have a normal form because of an ill-formed expression
      */
-    public eval(_rho: V.Rho): V.Value {
+    public eval(_rho: O.Rho): V.Value {
         throw new Error(`Cannot evaluate ${this}`);
     }
 
@@ -64,7 +26,7 @@ export abstract class Core {
      *     the renamings are used to check whether variables are bound to the same bindings
      * @throws when two expressions are not equivalent, otherwise returns void
      */
-    public abstract alpha_equiv(other: Core, context: Renamings): void;
+    public abstract alpha_equiv(other: Core, context: O.Renamings): void;
 
     /**
      * Returns the readable string representation of this core expression
@@ -78,19 +40,21 @@ export class Var extends Core {
      */
     public constructor(public name: Symbol) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
-        if (gamma.has(this.name)) {
-            return gamma.get(this.name) as V.Value;
+    public override eval(rho: O.Rho): V.Value {
+        const value = rho.get(this.name);
+        if (value instanceof O.Define) {
+            return value.value;
+        } else if (value instanceof O.Data) {
+            // TODO
+            throw new Error("Cannot reference data type variable");
         } else {
             throw new Error(`Could not find variable ${this.name}`);
         }
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
-        if (other instanceof Var) {
-            if (context.check(this.name, other.name)) {
-                throw new Error(`Not α-equiv: ${this.name} and ${other.name}`);
-            }
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
+        if (other instanceof Var && context.check(this.name, other.name)) {
+            throw new Error(`Not α-equiv: ${this.name} and ${other.name}`);
         } else {
             throw new Error("Not structurally equiv Var");
         }
@@ -102,11 +66,11 @@ export class Var extends Core {
 }
 
 export class Atom extends Core {
-    public override eval(_gamma: V.Rho): V.Value {
+    public override eval(_rho: O.Rho): V.Value {
         return new V.Atom();
     }
 
-    public override alpha_equiv(other: Core, _context: Renamings): void {
+    public override alpha_equiv(other: Core, _context: O.Renamings): void {
         if (!(other instanceof Atom)) {
             throw new Error("Not structurally equiv Atom");
         }
@@ -123,18 +87,16 @@ export class Tick extends Core {
      */
     public constructor(public name: Symbol) { super(); }
 
-    public override eval(_gamma: V.Rho): V.Value {
+    public override eval(_rho: O.Rho): V.Value {
         return new V.Tick(this.name);
     }
 
-    public override alpha_equiv(other: Core, _context: Renamings): void {
+    public override alpha_equiv(other: Core, _context: O.Renamings): void {
         // Ticks are structurally equivalent when the names are the same
         // Renamings are not relevant here
-        if (other instanceof Tick) {
-            if (this.name !== other.name) {
-                throw new Error(`Not α-equiv ${this.name} and ${other.name}`);
-            }
-        } else {
+        if (other instanceof Tick && this.name !== other.name) {
+            throw new Error(`Not α-equiv ${this.name} and ${other.name}`);
+        } else if (!(other instanceof Tick)) {
             throw new Error("Not structurally equiv Tick");
         }
     }
@@ -156,19 +118,16 @@ export class Sigma extends Core {
         public body: Core,
     ) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
-        const eval_value = this.value.eval(gamma);
-        const clos_body = new V.Closure(gamma, this.body);
+    public override eval(rho: O.Rho): V.Value {
+        const eval_value = this.value.eval(rho);
+        const clos_body = new V.Closure(rho, this.body);
         return new V.Sigma(this.name, eval_value, clos_body);
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Sigma) {
             this.value.alpha_equiv(other.value, context);
-            this.body.alpha_equiv(
-                other.body,
-                context.add(this.name, other.name)
-            );
+            this.body.alpha_equiv(other.body, context.add(this.name, other.name));
         } else {
             throw new Error("Not structurally equiv Sigma");
         }
@@ -189,11 +148,11 @@ export class Cons extends Core {
         public right: Core
     ) { super(); }
 
-    public override eval(context: V.Rho): V.Value {
+    public override eval(context: O.Rho): V.Value {
         return new V.Cons(this.left.eval(context), this.right.eval(context));
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Cons) {
             this.left.alpha_equiv(other.left, context);
             this.right.alpha_equiv(other.right, context);
@@ -213,8 +172,8 @@ export class Car extends Core {
      */
     public constructor(public pair: Core) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
-        return Car.do(this.pair.eval(gamma) as V.Cons | V.Neutral);
+    public override eval(rho: O.Rho): V.Value {
+        return Car.do(this.pair.eval(rho) as V.Cons | V.Neutral);
     }
 
     /**
@@ -235,7 +194,7 @@ export class Car extends Core {
         }
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Car) {
             this.pair.alpha_equiv(other.pair, context);
         } else {
@@ -254,8 +213,8 @@ export class Cdr extends Core {
      */
     public constructor(public pair: Core) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
-        const eval_pair = this.pair.eval(gamma) as V.Cons | V.Neutral;
+    public override eval(rho: O.Rho): V.Value {
+        const eval_pair = this.pair.eval(rho) as V.Cons | V.Neutral;
         if (eval_pair instanceof V.Neutral) {
             const sigma = eval_pair.type as V.Sigma;
             return new V.Neutral(
@@ -268,7 +227,7 @@ export class Cdr extends Core {
         }
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Cdr) {
             this.pair.alpha_equiv(other.pair, context);
         } else {
@@ -293,12 +252,12 @@ export class Pi extends Core {
         public body: Core,
     ) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
-        const clos_body = new V.Closure(gamma, this.body);
-        return new V.Pi(this.name, this.value.eval(gamma), clos_body);
+    public override eval(rho: O.Rho): V.Value {
+        const clos_body = new V.Closure(rho, this.body);
+        return new V.Pi(this.name, this.value.eval(rho), clos_body);
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Pi) {
             this.value.alpha_equiv(other.value, context);
             this.body.alpha_equiv(
@@ -325,12 +284,12 @@ export class Lambda extends Core {
         public body: Core
     ) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
-        const clos_body = new V.Closure(gamma, this.body);
+    public override eval(rho: O.Rho): V.Value {
+        const clos_body = new V.Closure(rho, this.body);
         return new V.Lambda(this.name, clos_body);
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Lambda) {
             this.body.alpha_equiv(
                 other.body,
@@ -356,10 +315,10 @@ export class Appl extends Core {
         public arg: Core
     ) { super(); }
 
-    public override eval(gamma: V.Rho): V.Value {
+    public override eval(rho: O.Rho): V.Value {
         return Appl.do(
-            this.func.eval(gamma) as V.Lambda | V.Neutral,
-            this.arg.eval(gamma),
+            this.func.eval(rho) as V.Lambda | V.Neutral,
+            this.arg.eval(rho),
         );
     }
 
@@ -375,7 +334,7 @@ export class Appl extends Core {
         }
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Appl) {
             this.func.alpha_equiv(other.func, context);
             this.arg.alpha_equiv(other.arg, context);
@@ -389,21 +348,12 @@ export class Appl extends Core {
     }
 }
 
-/**
- * Convert a Rho into a Bound
- * @param gamma the runtime environment
- * @returns a list of all bound variables
- */
-export function to_bound(gamma: V.Rho): V.Bound {
-    return gamma.keySeq().toList();
-}
-
 export class U extends Core {
-    public override eval(_gamma: V.Rho): V.Value {
+    public override eval(_rho: O.Rho): V.Value {
         return new V.U();
     }
 
-    public override alpha_equiv(other: Core, _context: Renamings): void {
+    public override alpha_equiv(other: Core, _context: O.Renamings): void {
         if (!(other instanceof U)) {
             throw new Error("Not structurally equiv U");
         }
@@ -425,13 +375,13 @@ export class Constructor extends Core {
         public type: Datatype
     ) { super(); }
 
-    public override eval(rho: V.Rho): V.Value {
+    public override eval(rho: O.Rho): V.Value {
         const args = this.args.map(({ expr, type }) => ({ expr: expr.eval(rho), type: type.eval(rho) }));
         const datatype = this.type.eval(rho) as V.Datatype;
         return new V.Constructor(this.name, args, datatype);
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Constructor) {
             if (this.name !== other.name)
                 throw new Error("Names of constructors must match up");
@@ -454,7 +404,7 @@ export class ConstructorInfo {
         public type: I.List<Core>
     ) { }
 
-    public eval(rho: V.Rho): V.ConstructorInfo {
+    public eval(rho: O.Rho): V.ConstructorInfo {
         const parameters = this.parameters.map(({ name, value }) => ({ name, value: value.eval(rho) }));
         const type = this.type.map(t => t.eval(rho));
         return new V.ConstructorInfo(parameters, type);
@@ -469,18 +419,18 @@ export class Datatype extends Core {
         public constructors: I.Map<Symbol, ConstructorInfo>
     ) { super(); }
 
-    public override eval(rho: V.Rho): V.Value {
+    public override eval(rho: O.Rho): V.Value {
         const parameters = Datatype.eval_parameters(this.parameters, rho);
         const indices = Datatype.eval_parameters(this.indices, rho);
         const constructors = this.constructors.map(c => c.eval(rho));
         return new V.Datatype(this.name, parameters, indices, constructors);
     }
 
-    private static eval_parameters(parameters: I.List<DatatypeParameter>, rho: V.Rho): I.List<V.DatatypeParameter> {
+    private static eval_parameters(parameters: I.List<DatatypeParameter>, rho: O.Rho): I.List<V.DatatypeParameter> {
         return parameters.map(({ expr, type }) => ({ expr: expr.eval(rho), type: type.eval(rho) }));
     }
 
-    public override alpha_equiv(other: Core, _context: Renamings): void {
+    public override alpha_equiv(other: Core, _context: O.Renamings): void {
         if (!(other instanceof Datatype && this.name === other.name))
             throw new Error("Not structurally equiv Datatype");
     }
@@ -500,7 +450,7 @@ export class Arm {
         public body: Core
     ) { }
 
-    public alpha_equiv(other: Arm, context: Renamings): void {
+    public alpha_equiv(other: Arm, context: O.Renamings): void {
         this.pattern.is_same(other.pattern);
         const new_context = this.pattern.extend_renamings(context, other.pattern);
         this.body.alpha_equiv(other.body, new_context);
@@ -518,7 +468,7 @@ export class Match extends Core {
         public motive: V.Value
     ) { super(); }
 
-    public override eval(rho: V.Rho): V.Value {
+    public override eval(rho: O.Rho): V.Value {
         const eval_target = this.target.eval(rho);
         if (eval_target instanceof V.Neutral) {
             const motive = new N.Normal(this.motive, new V.U());
@@ -534,7 +484,7 @@ export class Match extends Core {
         }
     }
 
-    public override alpha_equiv(other: Core, context: Renamings): void {
+    public override alpha_equiv(other: Core, context: O.Renamings): void {
         if (other instanceof Match) {
             this.target.alpha_equiv(other.target, context);
             this.arms.zipWith((left, right) => left.alpha_equiv(right, context), other.arms);

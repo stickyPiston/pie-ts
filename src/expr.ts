@@ -3,80 +3,81 @@ import * as V from "./value.ts";
 import * as N from "./neutral.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as A from "./pattern.ts";
+import * as O from "./context.ts";
 
-type Symbol = string;
+type Symbol = O.Symbol;
 
 /**
  * The result of the synthesis judgement is a core expression and the type of that expression
  */
 export type SynthResult = { type: V.Value; expr: C.Core };
 
-/**
- * A definition context entry represents a definition earlier defined by a (define ...).
- * It is also stores the type of the value for convenience
- */
-export type Define = { type: "Define"; value: { type: V.Value; value: V.Value } };
+// /**
+//  * A definition context entry represents a definition earlier defined by a (define ...).
+//  * It is also stores the type of the value for convenience
+//  */
+// export type Define = { type: "Define"; value: { type: V.Value; value: V.Value } };
 
-/**
- * A claim declares that a variable has a type, but may not have definition yet.
- * Every (claim ...) is stored as a claim context entry
- */
-export type Claim = { type: "Claim"; value: V.Value };
+// /**
+//  * A claim declares that a variable has a type, but may not have definition yet.
+//  * Every (claim ...) is stored as a claim context entry
+//  */
+// export type Claim = { type: "Claim"; value: V.Value };
 
-/**
- * A HasType entry stores that a variable is defined locally by a lambda, pi, sigma, or other binder
- * and has a type. The value is not stored since this is not needed during type checking
- */
-export type HasType = { type: "HasType"; value: V.Value };
+// /**
+//  * A HasType entry stores that a variable is defined locally by a lambda, pi, sigma, or other binder
+//  * and has a type. The value is not stored since this is not needed during type checking
+//  */
+// export type HasType = { type: "HasType"; value: V.Value };
 
-/**
- * Context entries have a name and either a definition, a claim or type declaration
- */
-export type ContextEntry = { name: Symbol } & (Define | Claim | HasType);
+// /**
+//  * Context entries have a name and either a definition, a claim or type declaration
+//  */
+// export type ContextEntry = { name: Symbol } & (Define | Claim | HasType);
 
-/**
- * The context contains different context entries which all have a name
- * and some extra information based on what kind of the entry it is.
- * Names in the context can have multiple entries with different types
- */
-export type Context = I.List<ContextEntry>;
+// /**
+//  * The context contains different context entries which all have a name
+//  * and some extra information based on what kind of the entry it is.
+//  * Names in the context can have multiple entries with different types
+//  */
+// export type Context = I.List<ContextEntry>;
 
-/**
- * Generate a fresh name within the given context based off a name
- * @param context the expression context
- * @param name the name to base the fresh name off
- * @param attempt the number of attempts the function has done already
- * @returns a fresh new wihtin the given context
- */
-export function fresh(
-    context: Context,
-    name: Symbol,
-    attempt: number | undefined = undefined,
-): Symbol {
-    const altered = attempt ? name + attempt : name;
-    if (context.find((x) => x.name === altered)) {
-        return fresh(context, name, (attempt ?? 0) + 1);
-    } else {
-        return altered;
-    }
-}
+// /**
+//  * Generate a fresh name within the given context based off a name
+//  * @param context the expression context
+//  * @param name the name to base the fresh name off
+//  * @param attempt the number of attempts the function has done already
+//  * @returns a fresh new wihtin the given context
+//  */
+// export function fresh(
+//     context: Context,
+//     name: Symbol,
+//     attempt: number | undefined = undefined,
+// ): Symbol {
+//     const altered = attempt ? name + attempt : name;
+//     if (context.find((x) => x.name === altered)) {
+//         return fresh(context, name, (attempt ?? 0) + 1);
+//     } else {
+//         return altered;
+//     }
+// }
 
-/**
- * Convert the typechecking context into a runtime context
- * @param context the expression context
- * @returns a runtime context
- */
-export function to_rho(context: Context): V.Rho {
-    return context
-        .filter(({ type }) => type !== "Claim")
-        .reduce((rho, { name, type, value }) => {
-            if (type === "Define") {
-                return rho.set(name, value.value);
-            } else {
-                return rho.set(name, new V.Neutral(value, new N.Var(name)));
-            }
-        }, I.Map() as V.Rho);
-}
+// /**
+//  * Convert the typechecking context into a runtime context
+//  * @param context the expression context
+//  * @returns a runtime context
+//  */
+// export function to_rho(context: Context): V.Rho {
+//     return context
+//         .filter(({ type }) => type !== "Claim")
+//         .reduce((rho, { name, type, value }) => {
+//             if (type === "Define") {
+//                 return rho.set(name, value.value);
+//             } else {
+//                 return rho.set(name, new V.Neutral(value, new N.Var(name)));
+//             }
+//         }, I.Map() as V.Rho);
+// }
 
 /**
  * Evaluate a core expression to its normal under an expression context
@@ -84,20 +85,20 @@ export function to_rho(context: Context): V.Rho {
  * @param context the expression context
  * @returns the normal form of core
  */
-function run_eval(core: C.Core, context: Context): V.Value {
-    return core.eval(to_rho(context));
+function run_eval(core: C.Core, context: O.Gamma): V.Value {
+    return core.eval(context.to_rho());
 }
 
-/**
- * Add a local binding to the context
- * @param name the name of the variable
- * @param local the type of the variable
- * @param context the current expression context
- * @returns the new expression context
- */
-function push_local(name: Symbol, local: V.Value, context: Context): Context {
-    return context.push({ name, type: "HasType", value: local });
-}
+// /**
+//  * Add a local binding to the context
+//  * @param name the name of the variable
+//  * @param local the type of the variable
+//  * @param context the current expression context
+//  * @returns the new expression context
+//  */
+// function push_local(name: Symbol, local: V.Value, context: Context): Context {
+//     return context.push({ name, type: "HasType", value: local });
+// }
 
 /**
  * Expr is the class that represents the "raw" abstract syntax tree.
@@ -114,7 +115,7 @@ export abstract class Expr {
      * @returns the type and the core expression
      * @throws when synthesising a type is not possible, e.g. for lambdas
      */
-    public synth(_context: Context): SynthResult {
+    public synth(_context: O.Gamma): SynthResult {
         throw new Error(`Could not synthesize type for ${this.description}.`);
     }
 
@@ -125,7 +126,7 @@ export abstract class Expr {
      * @returns the core expression after type checking
      * @throws when the expression is not a type
      */
-    public isType(context: Context): C.Core {
+    public isType(context: O.Gamma): C.Core {
         return this.check(context, new V.U());
     }
 
@@ -136,11 +137,11 @@ export abstract class Expr {
      * @returns the core expression after type checking
      * @throws when the expression is not of the given type
      */
-    public check(context: Context, against: V.Value): C.Core {
+    public check(context: O.Gamma, against: V.Value): C.Core {
         const { type, expr } = this.synth(context);
-        const rho = to_rho(context);
+        const rho = context.to_rho();
         // console.log(against, expr, type);
-        against.same_type(rho, C.to_bound(rho), type);
+        against.same_type(rho, rho.to_bound(), type);
         return expr;
     }
 }
@@ -165,7 +166,7 @@ export class The extends Expr {
      * whether the value has the annotated type and then returning
      * the annotated type and the compiled core expression
      */
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         const type_core = this.type.isType(context);
         const type_value = run_eval(type_core, context);
         const value_core = this.value.check(context, type_value);
@@ -190,13 +191,16 @@ export class Var extends Expr {
      * If the variable has a proper entry, then return the type of the variable and a core expression for this var.
      * TODO: Verify whether shadowing works for type checking
      */
-    public override synth(context: Context): SynthResult {
-        const type = context.find(({ name, type }) =>
-            name === this.name && (type === "Define" || type === "HasType")
-        ) as { name: Symbol } & (HasType | Define);
-        if (type) {
-            const type_value = type.type === "Define" ? type.value.type : type.value;
-            return { type: type_value, expr: new C.Var(this.name) };
+    public override synth(context: O.Gamma): SynthResult {
+        const entries  = context.get_all(this.name);
+        const define   = entries.findLast(entry => entry instanceof O.Define) as O.Define | undefined;
+        const claim    = entries.findLast(entry => entry instanceof O.Claim) as O.Claim | undefined;
+        const has_type = entries.findLast(entry => entry instanceof O.HasType) as O.HasType | undefined;
+
+        if (define && claim) {
+            return { type: claim.type, expr: new C.Var(this.name) };
+        } else if (has_type) {
+            return { type: has_type.type, expr: new C.Var(this.name) };
         } else {
             throw new Error(`Cannot find undeclared symbol ${this.name}`);
         }
@@ -211,11 +215,11 @@ export class Var extends Expr {
 export class Atom extends Expr {
     public description = "Atom type";
 
-    public override synth(_context: Context): SynthResult {
+    public override synth(_context: O.Gamma): SynthResult {
         return { type: new V.U(), expr: new C.Atom() };
     }
 
-    public override isType(_context: Context): C.Core {
+    public override isType(_context: O.Gamma): C.Core {
         return new C.Atom();
     }
 }
@@ -236,7 +240,7 @@ export class Tick extends Expr {
     /**
      * Synthesising a type for ticks is trivial: they are always Atoms 
      */
-    public override synth(_context: Context): SynthResult {
+    public override synth(_context: O.Gamma): SynthResult {
         return { type: new V.Atom(), expr: new C.Tick(this.name) };
     }
 }
@@ -261,14 +265,10 @@ export class Pair extends Expr {
     /**
      * Checking whether a Pair is a type, involves simulating the underlying sigma type
      */
-    public override isType(context: Context): C.Core {
+    public override isType(context: O.Gamma): C.Core {
         const core_A = this.left.isType(context);
-        const fresh_x = fresh(context, "x");
-        const new_gamma = push_local(
-            fresh_x,
-            run_eval(core_A, context),
-            context,
-        );
+        const fresh_x = context.fresh("x");
+        const new_gamma = context.set(fresh_x, run_eval(core_A, context));
         const core_body = this.right.isType(new_gamma);
         return new C.Sigma(fresh_x, core_A, core_body);
     }
@@ -277,12 +277,12 @@ export class Pair extends Expr {
      * Since Pairs are just non-dependent sigma types, they are not included in core Pie.
      * This means that Pair expressions are compiled to Sigma types with fresh names
      */
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         const core_A = this.left.check(context, new V.U());
         const core_D = this.right.check(context, new V.U());
         return {
             type: new V.U(),
-            expr: new C.Sigma(fresh(context, "x"), core_A, core_D),
+            expr: new C.Sigma(context.fresh("x"), core_A, core_D),
         };
     }
 }
@@ -304,7 +304,7 @@ export class Sigma extends Expr {
         public base: Expr,
     ) { super(); }
 
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         const core = this.isType(context);
         return { type: new V.U(), expr: core };
     }
@@ -313,14 +313,10 @@ export class Sigma extends Expr {
      * n-ary Sigma types are compiled to binary core Sigma types, so we use
      * recursion to compile and type check the inner Sigma types
      */
-    public override isType(context: Context): C.Core {
+    public override isType(context: O.Gamma): C.Core {
         const A = this.params.first()!, rest = this.params.shift();
         const core_A = A.value.isType(context);
-        const new_gamma = push_local(
-            A.name,
-            run_eval(core_A, context),
-            context,
-        );
+        const new_gamma = context.set(A.name, run_eval(core_A, context));
         if (rest.size) {
             const smaller = new Sigma(rest, this.base);
             const core_smaller = smaller.isType(new_gamma);
@@ -352,7 +348,7 @@ export class Cons extends Expr {
      * of the cons into the type of the right-hand side, because Sigma's right-hand side is
      * dependent on the left-hand side
      */
-    public override check(context: Context, against: V.Value): C.Core {
+    public override check(context: O.Gamma, against: V.Value): C.Core {
         if (against instanceof V.Sigma) {
             const { name, value: A, body: D } = against;
             const core_left = this.left.check(context, A);
@@ -376,7 +372,7 @@ export class Car extends Expr {
      */
     public constructor(public pair: Expr) { super(); }
 
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         const { type, expr: core } = this.pair.synth(context);
         if (type instanceof V.Sigma) {
             return { type: type.value, expr: new C.Car(core) };
@@ -397,7 +393,7 @@ export class Cdr extends Expr {
      */
     public constructor(public pair: Expr) { super(); }
 
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         const { type, expr: core } = this.pair.synth(context);
         if (type instanceof V.Sigma) {
             // TODO: replace value with body and instatiate it with the car
@@ -427,17 +423,13 @@ export class Arrow extends Expr {
      * is a type and then recurse on the rest. This pattern can be seen throughout all
      * of the n-ary operators 
      */
-    public override isType(context: Context): C.Core {
+    public override isType(context: O.Gamma): C.Core {
         const from = this.args.first()!, to = this.args.get(1), rest = this.args.skip(2);
         const core_from = from.isType(context);
-        const fresh_x = fresh(context, "x");
+        const fresh_x = context.fresh("x");
         if (to && rest.size) {
             const smaller = new Arrow(rest.insert(0, to));
-            const new_gamma = push_local(
-                fresh_x,
-                run_eval(core_from, context),
-                context,
-            );
+            const new_gamma = context.set(fresh_x, run_eval(core_from, context));
             const core_smaller = smaller.isType(new_gamma);
             return new C.Pi(fresh_x, core_from, core_smaller);
         } else if (to) {
@@ -451,11 +443,12 @@ export class Arrow extends Expr {
     /**
      * An arrow expression is compiled to (nested) Pi core expressions with fresh unused names
      */
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         const from = this.args.first()!, to = this.args.get(1), rest = this.args.skip(2);
         const core_X = from.check(context, new V.U());
-        const var_x = fresh(context, "x");
-        const new_gamma = push_local(var_x, run_eval(core_X, context), context);
+        const var_x = context.fresh("x");
+        const new_gamma = context.set(var_x, run_eval(core_X, context));
+
         if (rest.size) {
             const core_R = new Arrow(rest).check(new_gamma, new V.U());
             return {
@@ -490,14 +483,10 @@ export class Pi extends Expr {
         public base: Expr,
     ) { super(); }
 
-    public override isType(context: Context): C.Core {
+    public override isType(context: O.Gamma): C.Core {
         const arg = this.params.first()!, rest = this.params.shift();
         const core_arg = arg.value.isType(context);
-        const new_gamma = push_local(
-            arg.name,
-            run_eval(core_arg, context),
-            context,
-        );
+        const new_gamma = context.set(arg.name, run_eval(core_arg, context));
         if (rest.size) {
             const smaller = new Pi(rest, this.base);
             const core_smaller = smaller.isType(new_gamma);
@@ -508,14 +497,11 @@ export class Pi extends Expr {
         }
     }
 
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         const param = this.params.first()!, rest = this.params.shift();
         const core_X = param.value.check(context, new V.U());
-        const new_gamma = push_local(
-            param.name,
-            run_eval(core_X, context),
-            context,
-        );
+        const new_gamma = context.set(param.name, run_eval(core_X, context));
+
         if (rest.size) {
             const core_R = new Pi(rest, this.base).check(new_gamma, new V.U());
             return {
@@ -552,15 +538,13 @@ export class Lambda extends Expr {
      * of the pi and assign the parameter into the context and check the body
      * of the lambda against the body of the pi
      */
-    public override check(context: Context, against: V.Value): C.Core {
+    public override check(context: O.Gamma, against: V.Value): C.Core {
         if (against instanceof V.Pi) {
             const { value, body } = against;
             const param = this.params.first()!, rest = this.params.shift();
-            const new_gamma = push_local(param, value, context);
-            const new_against = body.instantiate(
-                against.name,
-                new V.Neutral(value, new N.Var(param)),
-            );
+            const new_gamma = context.set(param, value);
+            const new_against = body.instantiate(against.name, new V.Neutral(value, new N.Var(param)));
+
             if (rest.size) {
                 const smaller = new Lambda(rest, this.body);
                 const core_smaller = smaller.check(new_gamma, new_against);
@@ -596,7 +580,7 @@ export class Appl extends Expr {
      * To synthesise a type for an application, we need to synthesise the type for the operator
      * and check whether the operand is of the type of the operator's parameter type
      */
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         if (this.args.size > 1) {
             const args = this.args.skipLast(1);
             const appl = new Appl(this.func, args);
@@ -609,10 +593,7 @@ export class Appl extends Expr {
             const core_arg = arg.check(context, type.value);
 
             return {
-                type: type.body.instantiate(
-                    type.name,
-                    run_eval(core_arg, context),
-                ),
+                type: type.body.instantiate(type.name, run_eval(core_arg, context)),
                 expr: new C.Appl(core_appl, core_arg),
             };
         } else {
@@ -622,10 +603,7 @@ export class Appl extends Expr {
                 const core_arg = arg.check(context, type.value);
 
                 return {
-                    type: type.body.instantiate(
-                        type.name,
-                        run_eval(core_arg, context),
-                    ),
+                    type: type.body.instantiate(type.name, run_eval(core_arg, context)),
                     expr: new C.Appl(core_func, core_arg),
                 };
             } else {
@@ -641,7 +619,7 @@ export class Appl extends Expr {
 export class U extends Expr {
     public description = "U type";
 
-    public override isType(_context: Context): C.Core {
+    public override isType(_context: O.Gamma): C.Core {
         return new C.U();
     }
 }
@@ -652,13 +630,13 @@ export class Arm {
         public body: Expr
     ) { }
 
-    public check(context: Context, type: V.Value, against: V.Value): C.Arm {
+    public check(context: O.Gamma, type: V.Value, against: V.Value): C.Arm {
         const new_context = this.pattern.extend_context(context, type);
         const core_body = this.body.check(new_context, against);
         return new C.Arm(this.pattern, core_body);
     }
 
-    public synth(context: Context, type: V.Value): { type: V.Value, expr: C.Arm } {
+    public synth(context: O.Gamma, type: V.Value): { type: V.Value, expr: C.Arm } {
         const new_context = this.pattern.extend_context(context, type);
         const { expr: core_body, type: type_body } = this.body.synth(new_context);
         return { expr: new C.Arm(this.pattern, core_body), type: type_body };
@@ -673,7 +651,7 @@ export class Match extends Expr {
         public arms: I.List<Arm>
     ) { super(); }
 
-    public override synth(context: Context): SynthResult {
+    public override synth(context: O.Gamma): SynthResult {
         const { expr: core_target, type: type_target } = this.target.synth(context);
         const first_arm = this.arms.first()!, other_arms = this.arms.skip(1);
         const { expr: core_first_arm, type: type_body } = first_arm.synth(context, type_target);
