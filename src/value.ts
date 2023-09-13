@@ -4,8 +4,6 @@ import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as O from "./context.ts";
 
 type Symbol = O.Symbol;
-// export type Bound = I.List<Symbol>;
-// export type Rho = I.Map<Symbol, Value>;
 
 export class Closure {
     public constructor(public context: O.Rho, public body: C.Core) { }

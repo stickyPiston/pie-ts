@@ -7,17 +7,6 @@ import * as O from "./context.ts";
 type Symbol = O.Symbol;
 
 /**
- * A top level context entry is either a define or a claim
- */
-// type TopLevelEntry = { name: Symbol; type: "Claim" | "Define"; value: V.Value };
-
-/**
- * Since variables need to be claimed and defined we need to store the entries in a list
- * rather than a map
- */
-// export type Context = I.List<TopLevelEntry>;
-
-/**
  * Abstract class for top-level constructs
  */
 export interface TopLevel {

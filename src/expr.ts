@@ -12,73 +12,6 @@ type Symbol = O.Symbol;
  */
 export type SynthResult = { type: V.Value; expr: C.Core };
 
-// /**
-//  * A definition context entry represents a definition earlier defined by a (define ...).
-//  * It is also stores the type of the value for convenience
-//  */
-// export type Define = { type: "Define"; value: { type: V.Value; value: V.Value } };
-
-// /**
-//  * A claim declares that a variable has a type, but may not have definition yet.
-//  * Every (claim ...) is stored as a claim context entry
-//  */
-// export type Claim = { type: "Claim"; value: V.Value };
-
-// /**
-//  * A HasType entry stores that a variable is defined locally by a lambda, pi, sigma, or other binder
-//  * and has a type. The value is not stored since this is not needed during type checking
-//  */
-// export type HasType = { type: "HasType"; value: V.Value };
-
-// /**
-//  * Context entries have a name and either a definition, a claim or type declaration
-//  */
-// export type ContextEntry = { name: Symbol } & (Define | Claim | HasType);
-
-// /**
-//  * The context contains different context entries which all have a name
-//  * and some extra information based on what kind of the entry it is.
-//  * Names in the context can have multiple entries with different types
-//  */
-// export type Context = I.List<ContextEntry>;
-
-// /**
-//  * Generate a fresh name within the given context based off a name
-//  * @param context the expression context
-//  * @param name the name to base the fresh name off
-//  * @param attempt the number of attempts the function has done already
-//  * @returns a fresh new wihtin the given context
-//  */
-// export function fresh(
-//     context: Context,
-//     name: Symbol,
-//     attempt: number | undefined = undefined,
-// ): Symbol {
-//     const altered = attempt ? name + attempt : name;
-//     if (context.find((x) => x.name === altered)) {
-//         return fresh(context, name, (attempt ?? 0) + 1);
-//     } else {
-//         return altered;
-//     }
-// }
-
-// /**
-//  * Convert the typechecking context into a runtime context
-//  * @param context the expression context
-//  * @returns a runtime context
-//  */
-// export function to_rho(context: Context): V.Rho {
-//     return context
-//         .filter(({ type }) => type !== "Claim")
-//         .reduce((rho, { name, type, value }) => {
-//             if (type === "Define") {
-//                 return rho.set(name, value.value);
-//             } else {
-//                 return rho.set(name, new V.Neutral(value, new N.Var(name)));
-//             }
-//         }, I.Map() as V.Rho);
-// }
-
 /**
  * Evaluate a core expression to its normal under an expression context
  * @param core the core expression to evaluate
@@ -88,17 +21,6 @@ export type SynthResult = { type: V.Value; expr: C.Core };
 function run_eval(core: C.Core, context: O.Gamma): V.Value {
     return core.eval(context.to_rho());
 }
-
-// /**
-//  * Add a local binding to the context
-//  * @param name the name of the variable
-//  * @param local the type of the variable
-//  * @param context the current expression context
-//  * @returns the new expression context
-//  */
-// function push_local(name: Symbol, local: V.Value, context: Context): Context {
-//     return context.push({ name, type: "HasType", value: local });
-// }
 
 /**
  * Expr is the class that represents the "raw" abstract syntax tree.
