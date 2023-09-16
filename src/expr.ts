@@ -114,10 +114,12 @@ export class Var extends Expr {
      * TODO: Verify whether shadowing works for type checking
      */
     public override synth(context: O.Gamma): SynthResult {
+        // TODO
         const entries  = context.get_all(this.name);
         const define   = entries.findLast(entry => entry instanceof O.Define) as O.Define | undefined;
         const claim    = entries.findLast(entry => entry instanceof O.Claim) as O.Claim | undefined;
         const has_type = entries.findLast(entry => entry instanceof O.HasType) as O.HasType | undefined;
+        const data     = entries.findLast(entry => entry instanceof O.Data) as O.Data | undefined;
 
         if (define && claim) {
             return { type: claim.type, expr: new C.Var(this.name) };

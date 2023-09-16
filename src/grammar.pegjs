@@ -35,15 +35,15 @@ Data = "(data"
 Constructor = "(" name: Symbol parameters: (Whitespace Binder)* Whitespace "(" ret_type_name: Symbol ret_type_args: (Whitespace Expression)+ ")" ")" {
     const parsed_parameters = parameters.map(binder => binder[1]);
     const parsed_ret_type = ret_type_args.map(arg => arg[1]);
-    return new T.Constructor(name, I.List(parsed_parameters), ret_type_name, I.List(parsed_ret_type));
+    return new T.Constructor(name, I.List(parsed_parameters), { name: ret_type_name, args: I.List(parsed_ret_type) });
 } / "(" name: Symbol parameters: (Whitespace Binder)* Whitespace ")" {
     const parsed_parameters = parameters.map(binder => binder[1]);
     const last_binder = parsed_parameters[parsed_parameters.length - 1];
     const parsed_ret_type = [last_binder.value];
-    return new T.Constructor(name, I.List(parsed_parameters), last_binder.name, I.List(parsed_ret_type));
+    return new T.Constructor(name, I.List(parsed_parameters), { name: last_binder.name, args: I.List(parsed_ret_type) });
 } / "(" name: Symbol parameters: (Whitespace Binder)* Whitespace ret_type: Var ")" {
     const parsed_parameters = parameters.map(binder => binder[1]);
-    return new T.Constructor(name, I.List(parsed_parameters), ret_type, I.List());
+    return new T.Constructor(name, I.List(parsed_parameters), { name: ret_type, args: I.List() });
 }
 
 Expression = Pi / Lambda / Sigma / Atom / Tick / Pair / U / Arrow

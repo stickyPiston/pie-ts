@@ -366,83 +366,83 @@ export class U extends Core {
 
 // Data types
 
-export type DatatypeParameter = { expr: Core, type: Core };
+// export type DatatypeParameter = { expr: Core, type: Core };
 
-export class Constructor extends Core {
-    public constructor(
-        public name: Symbol,
-        public args: I.List<DatatypeParameter>,
-        public type: Datatype
-    ) { super(); }
+// export class Constructor extends Core {
+//     public constructor(
+//         public name: Symbol,
+//         public args: I.List<DatatypeParameter>,
+//         public type: Datatype
+//     ) { super(); }
 
-    public override eval(rho: O.Rho): V.Value {
-        const args = this.args.map(({ expr, type }) => ({ expr: expr.eval(rho), type: type.eval(rho) }));
-        const datatype = this.type.eval(rho) as V.Datatype;
-        return new V.Constructor(this.name, args, datatype);
-    }
+//     public override eval(rho: O.Rho): V.Value {
+//         const args = this.args.map(({ expr, type }) => ({ expr: expr.eval(rho), type: type.eval(rho) }));
+//         const datatype = this.type.eval(rho) as V.Datatype;
+//         return new V.Constructor(this.name, args, datatype);
+//     }
 
-    public override alpha_equiv(other: Core, context: O.Renamings): void {
-        if (other instanceof Constructor) {
-            if (this.name !== other.name)
-                throw new Error("Names of constructors must match up");
-            this.args.zipWith((a, b) => a.expr.alpha_equiv(b.expr, context), other.args);
-        } else {
-            throw new Error("Not structurally equiv Constructor");
-        }
-    }
+//     public override alpha_equiv(other: Core, context: O.Renamings): void {
+//         if (other instanceof Constructor) {
+//             if (this.name !== other.name)
+//                 throw new Error("Names of constructors must match up");
+//             this.args.zipWith((a, b) => a.expr.alpha_equiv(b.expr, context), other.args);
+//         } else {
+//             throw new Error("Not structurally equiv Constructor");
+//         }
+//     }
 
-    public override toString(): string {
-        return `(${this.name} ${this.args.join(" ")})`;
-    }
-}
+//     public override toString(): string {
+//         return `(${this.name} ${this.args.join(" ")})`;
+//     }
+// }
 
-type Param = { name: Symbol, value: Core };
+// type Param = { name: Symbol, value: Core };
 
-export class ConstructorInfo {
-    public constructor(
-        public parameters: I.List<Param>,
-        public type: I.List<Core>
-    ) { }
+// export class ConstructorInfo {
+//     public constructor(
+//         public parameters: I.List<Param>,
+//         public type: I.List<Core>
+//     ) { }
 
-    public eval(rho: O.Rho): V.ConstructorInfo {
-        const parameters = this.parameters.map(({ name, value }) => ({ name, value: value.eval(rho) }));
-        const type = this.type.map(t => t.eval(rho));
-        return new V.ConstructorInfo(parameters, type);
-    }
-}
+//     public eval(rho: O.Rho): V.ConstructorInfo {
+//         const parameters = this.parameters.map(({ name, value }) => ({ name, value: value.eval(rho) }));
+//         const type = this.type.map(t => t.eval(rho));
+//         return new V.ConstructorInfo(parameters, type);
+//     }
+// }
 
-export class Datatype extends Core {
-    public constructor(
-        public name: Symbol,
-        public parameters: I.List<DatatypeParameter>,
-        public indices: I.List<DatatypeParameter>,
-        public constructors: I.Map<Symbol, ConstructorInfo>
-    ) { super(); }
+// export class Datatype extends Core {
+//     public constructor(
+//         public name: Symbol,
+//         public parameters: I.List<DatatypeParameter>,
+//         public indices: I.List<DatatypeParameter>,
+//         public constructors: I.Map<Symbol, ConstructorInfo>
+//     ) { super(); }
 
-    public override eval(rho: O.Rho): V.Value {
-        const parameters = Datatype.eval_parameters(this.parameters, rho);
-        const indices = Datatype.eval_parameters(this.indices, rho);
-        const constructors = this.constructors.map(c => c.eval(rho));
-        return new V.Datatype(this.name, parameters, indices, constructors);
-    }
+//     public override eval(rho: O.Rho): V.Value {
+//         const parameters = Datatype.eval_parameters(this.parameters, rho);
+//         const indices = Datatype.eval_parameters(this.indices, rho);
+//         const constructors = this.constructors.map(c => c.eval(rho));
+//         return new V.Datatype(this.name, parameters, indices, constructors);
+//     }
 
-    private static eval_parameters(parameters: I.List<DatatypeParameter>, rho: O.Rho): I.List<V.DatatypeParameter> {
-        return parameters.map(({ expr, type }) => ({ expr: expr.eval(rho), type: type.eval(rho) }));
-    }
+//     private static eval_parameters(parameters: I.List<DatatypeParameter>, rho: O.Rho): I.List<V.DatatypeParameter> {
+//         return parameters.map(({ expr, type }) => ({ expr: expr.eval(rho), type: type.eval(rho) }));
+//     }
 
-    public override alpha_equiv(other: Core, _context: O.Renamings): void {
-        if (!(other instanceof Datatype && this.name === other.name))
-            throw new Error("Not structurally equiv Datatype");
-    }
+//     public override alpha_equiv(other: Core, _context: O.Renamings): void {
+//         if (!(other instanceof Datatype && this.name === other.name))
+//             throw new Error("Not structurally equiv Datatype");
+//     }
 
-    public override toString(): string {
-        const parameters = this.parameters
-            .concat(this.indices)
-            .map(param => param.expr.toString())
-            .join(" ");
-        return `(${this.name} ${parameters})`;
-    }
-}
+//     public override toString(): string {
+//         const parameters = this.parameters
+//             .concat(this.indices)
+//             .map(param => param.expr.toString())
+//             .join(" ");
+//         return `(${this.name} ${parameters})`;
+//     }
+// }
 
 export class Arm {
     public constructor(

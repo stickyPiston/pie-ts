@@ -1,6 +1,7 @@
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as V from "./value.ts";
 import * as N from "./neutral.ts";
+import * as E from "./expr.ts";
 
 export type Symbol = string;
 
@@ -26,9 +27,9 @@ export class ConstructorDef {
     }
 }
 
-// TODO
+export type TelescopePart = { name: Symbol, expr: E.Expr };
 export class Telescope {
-    public constructor(public entries: I.List<Entry>) { }
+    public constructor(public entries: I.List<TelescopePart>) { }
 
     public toString(): string {
         return `Telescope ${this.entries.toJSON()}`;

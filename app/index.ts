@@ -16,6 +16,6 @@
 
 import { I, P, T, O } from "../src/index.ts";
 
-const ast = P.parse(await Deno.readTextFile("examples/match.pie"));
-// console.log(ast);
-console.log(ast.reduce((sigma, x) => x.eval(sigma), new O.Sigma));
+const ast: any = P.parse(await Deno.readTextFile("examples/match.pie"));
+console.log(ast.get(0).eval(new O.Sigma));
+// console.log(ast.reduce((sigma, x) => x.eval(sigma), new O.Sigma));
