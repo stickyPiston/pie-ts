@@ -114,17 +114,15 @@ export class Var extends Expr {
      * TODO: Verify whether shadowing works for type checking
      */
     public override synth(context: O.Gamma): SynthResult {
-        // TODO
-        const entries  = context.get_all(this.name);
-        const define   = entries.findLast(entry => entry instanceof O.Define) as O.Define | undefined;
-        const claim    = entries.findLast(entry => entry instanceof O.Claim) as O.Claim | undefined;
-        const has_type = entries.findLast(entry => entry instanceof O.HasType) as O.HasType | undefined;
-        const data     = entries.findLast(entry => entry instanceof O.Data) as O.Data | undefined;
+        const entry = context.get(this.name);
 
-        if (define && claim) {
-            return { type: claim.type, expr: new C.Var(this.name) };
-        } else if (has_type) {
-            return { type: has_type.type, expr: new C.Var(this.name) };
+        if (entry) {
+            if (entry instanceof O.Data) {
+                // TODO
+                throw new Error("Not implemented yet!");
+            } else {
+                return { type: entry.type, expr: new C.Var(this.name) };
+            }
         } else {
             throw new Error(`Cannot find undeclared symbol ${this.name}`);
         }

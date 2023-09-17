@@ -109,26 +109,15 @@ export class Bind extends Entry {
 /**
  * A context is a mapping from names to entries.
  */
-export abstract class Context<T extends Entry> {
-    public constructor(protected entries: I.List<T> = I.List()) { }
+export abstract class Context<E extends Entry, R = E> {
+    public constructor(protected entries: I.List<E> = I.List()) { }
 
     /**
      * Get the latest entry associated with a variable from this context
      * @param name the name of the variable
      * @returns the last entry associated with the given name regardless the type
      */
-    public get(name: Symbol): T | undefined {
-        return this.entries.findLast(entry => entry.name === name);
-    }
-
-    /**
-     * Get all the entries associated with the given name in the context
-     * @param name the name of the variable
-     * @returns all entries associated with a variable in order they were added
-     */
-    public get_all(name: Symbol): I.List<T> {
-        return this.entries.filter(entry => entry.name === name);
-    }
+    public abstract get(name: Symbol): R | undefined;
 
     /**
      * Check whether a variable has an entry in the context
@@ -156,6 +145,10 @@ export abstract class Context<T extends Entry> {
  * defines, claims and datas which are defined through top-level statements.
  */
 export class Sigma extends Context<Define | Claim | Data> {
+    public override get(name: string): Define | Claim | Data | undefined {
+        return this.entries.findLast(e => e.name === name);
+    }
+
     /**
      * Push a new entry to this σ
      * @param entry an new entry
@@ -174,11 +167,31 @@ export class Sigma extends Context<Define | Claim | Data> {
     }
 }
 
+type GammaSearchResult = Data | { value?: V.Value, type: V.Value };
+
 /**
  * Gamma (Γ) is the local expression type-checking context, which inherits all entries from σ
  * and extends it along the way with type annotations for symbols.
  */
-export class Gamma extends Context<Define | Claim | HasType | Data> {
+export class Gamma extends Context<Define | Claim | HasType | Data, GammaSearchResult> {
+    public override get(name: string): GammaSearchResult | undefined {
+        const last_entry = this.entries.findLast(e => e.name === name);
+        if (last_entry instanceof Data) {
+            return last_entry;
+        } else if (last_entry instanceof Define) {
+            const last_type = this.entries.findLast(e => e.name === name && e instanceof Claim) as Claim | undefined;
+            if (last_type) {
+                return { value: last_entry.value, type: last_type.type };
+            } else {
+                throw new Error("Unreachable");
+            }
+        } else if (last_entry instanceof Claim) {
+            throw new Error("");
+        } else if (last_entry instanceof HasType) {
+            return { type: last_entry.type };
+        }
+    }
+
     /**
      * Push a new variable-type annotation to this context
      * @param name the name of the variable
@@ -209,6 +222,10 @@ export class Gamma extends Context<Define | Claim | HasType | Data> {
  * core expressions.
  */
 export class Rho extends Context<Define | Data> {
+    public override get(name: string): Define | Data | undefined {
+        return this.entries.findLast(e => e.name === name);
+    }
+
     /**
      * Push a new variable definition binding into this context
      * @param name the name of the variable
@@ -232,6 +249,10 @@ export class Rho extends Context<Define | Data> {
  * Bound is the names context when reading back normals forms to expressions.
  */
 export class Bound extends Context<Bind> {
+    public override get(name: string): Bind | undefined {
+        return this.entries.findLast(e => e.name === name);
+    }
+
     /**
      * Add a name to the list of bound variables
      * @param name the name of the variable

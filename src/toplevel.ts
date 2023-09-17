@@ -1,6 +1,4 @@
 import * as E from "./expr.ts";
-import * as C from "./core.ts";
-import * as V from "./value.ts";
 import * as I from "https://deno.land/x/immutable@4.0.0-rc.14-deno/mod.ts";
 import * as O from "./context.ts";
 
@@ -29,11 +27,15 @@ export class Define implements TopLevel {
      * put into the new context
      */
     public eval(sigma: O.Sigma): O.Sigma {
-        const claim = sigma.get_all(this.name).findLast(e => e instanceof O.Claim) as O.Claim | undefined;
-        const gamma = sigma.to_gamma();
-        const core = this.value.check(gamma, claim!.type);
-        const value = core.eval(gamma.to_rho());
-        return sigma.set(new O.Define(this.name, value));
+        const claim = sigma.get(this.name);
+        if (claim instanceof O.Claim) {
+            const gamma = sigma.to_gamma();
+            const core = this.value.check(gamma, claim!.type);
+            const value = core.eval(gamma.to_rho());
+            return sigma.set(new O.Define(this.name, value));
+        } else {
+            throw new Error(`Expected the variable ${this.name} to be claimed before being defined`);
+        }
     }
 }
 
